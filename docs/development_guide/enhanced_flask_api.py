@@ -390,4 +390,4 @@ if __name__ == '__main__':
     print("  POST /api/predict - Get heart disease prediction")
     print("  GET  /api/health  - Health check")
     print("  GET  /api/info    - Model information")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=8000, debug=True)

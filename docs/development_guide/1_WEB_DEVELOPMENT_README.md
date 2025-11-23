@@ -156,7 +156,7 @@ pip install -r requirements.txt
 ### Running the Backend
 ```bash
 python enhanced_flask_api.py
-# Server will start on http://localhost:5000
+# Server will start on http://localhost:8000
 ```
 
 ---

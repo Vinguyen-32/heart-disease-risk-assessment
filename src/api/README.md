@@ -33,23 +33,23 @@ From the project root:
 python src/api/app.py
 ```
 
-The API will start on `http://localhost:5000`
+The API will start on `http://localhost:8000`
 
 ### 3. Test the API
 
 **Health Check:**
 ```bash
-curl http://localhost:5000/api/health
+curl http://localhost:8000/api/health
 ```
 
 **Get Model Info:**
 ```bash
-curl http://localhost:5000/api/info
+curl http://localhost:8000/api/info
 ```
 
 **Make a Prediction:**
 ```bash
-curl -X POST http://localhost:5000/api/predict \
+curl -X POST http://localhost:8000/api/predict \
   -H "Content-Type: application/json" \
   -d '{
     "age": 55,
@@ -261,7 +261,7 @@ CORS(app, origins=["https://yourdomain.com"])
 ### Using Gunicorn
 
 ```bash
-gunicorn -w 4 -b 0.0.0.0:5000 src.api.app:app
+gunicorn -w 4 -b 0.0.0.0:8000 src.api.app:app
 ```
 
 ### Environment Variables
@@ -285,15 +285,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 5000
+EXPOSE 8000
 
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "src.api.app:app"]
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8000", "src.api.app:app"]
 ```
 
 Build and run:
 ```bash
 docker build -t heart-disease-api .
-docker run -p 5000:5000 heart-disease-api
+docker run -p 8000:8000 heart-disease-api
 ```
 
 ## Development
@@ -319,18 +319,18 @@ Test all endpoints:
 
 ```bash
 # Health check
-curl http://localhost:5000/api/health
+curl http://localhost:8000/api/health
 
 # Model info
-curl http://localhost:5000/api/info
+curl http://localhost:8000/api/info
 
 # Prediction (all fields)
-curl -X POST http://localhost:5000/api/predict \
+curl -X POST http://localhost:8000/api/predict \
   -H "Content-Type: application/json" \
   -d @test_data.json
 
 # Prediction (minimal fields)
-curl -X POST http://localhost:5000/api/predict \
+curl -X POST http://localhost:8000/api/predict \
   -H "Content-Type: application/json" \
   -d '{
     "age": 50,
