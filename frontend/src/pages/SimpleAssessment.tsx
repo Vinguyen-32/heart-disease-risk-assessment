@@ -37,30 +37,16 @@ interface FormData {
 interface PredictionResponse {
   success: boolean;
   data: {
-    prediction: {
-      severity_level: number;
-      severity_label: string;
-      risk_category: string;
-      confidence: number;
-    };
-    display: {
-      title: string;
-      message: string;
-      severity_color: string;
-      background_color: string;
-      confidence_display: string;
-    };
-    recommendation: {
-      action_items: string[];
-      urgency: string;
-    };
+    prediction: number;  // 0-2 (3 classes)
+    confidence: number;
     probabilities: {
-      chart_data: Array<{
-        label: string;
-        value: number;
-        color: string;
-      }>;
+      '0': number;
+      '1': number;
+      '2': number;
     };
+    risk_category: string;  // "No Disease", "Mild-Moderate", "Severe-Critical"
+    risk_color: string;     // Color hex code
+    action_items: string[];
   };
 }
 
@@ -409,22 +395,21 @@ export default function SimpleAssessment() {
             <div
               className="border-l-4 rounded-lg p-6 mb-6"
               style={{
-                backgroundColor: prediction.data.display.background_color,
-                borderColor: prediction.data.display.severity_color
+                backgroundColor: `${prediction.data.risk_color}15`,
+                borderColor: prediction.data.risk_color
               }}
             >
-              <h3 className="text-2xl font-bold mb-2" style={{ color: prediction.data.display.severity_color }}>
-                {prediction.data.display.title}
+              <h3 className="text-2xl font-bold mb-2" style={{ color: prediction.data.risk_color }}>
+                {prediction.data.risk_category}
               </h3>
-              <p className="text-lg mb-4">{prediction.data.display.message}</p>
-              <div className="flex gap-6 text-sm">
+              <div className="flex gap-6 text-sm mt-4">
                 <div>
-                  <span className="text-gray-600">Severity Level:</span>
-                  <strong className="ml-2">{prediction.data.prediction.severity_label}</strong>
+                  <span className="text-gray-600">Risk Level:</span>
+                  <strong className="ml-2">{['Low Risk', 'Moderate Risk', 'High Risk'][prediction.data.prediction]}</strong>
                 </div>
                 <div>
                   <span className="text-gray-600">Confidence:</span>
-                  <strong className="ml-2">{prediction.data.display.confidence_display}</strong>
+                  <strong className="ml-2">{(prediction.data.confidence * 100).toFixed(1)}%</strong>
                 </div>
               </div>
             </div>
@@ -433,29 +418,38 @@ export default function SimpleAssessment() {
             <div className="mb-6">
               <h3 className="text-xl font-semibold mb-4">Probability Distribution</h3>
               <div className="space-y-3">
-                {prediction.data.probabilities.chart_data.map((item, index) => (
-                  <div key={index} className="flex items-center gap-3">
-                    <div className="w-32 text-sm font-medium">{item.label}</div>
-                    <div className="flex-1">
-                      <div className="w-full bg-gray-200 rounded-full h-6 relative">
-                        <div
-                          className="h-6 rounded-full flex items-center justify-end pr-2 text-white text-xs font-semibold transition-all duration-500"
-                          style={{
-                            width: `${item.value}%`,
-                            backgroundColor: item.color
-                          }}
-                        >
-                          {item.value > 10 && `${item.value.toFixed(1)}%`}
+                {[
+                  { label: 'No Disease', key: '0', color: '#4CAF50' },
+                  { label: 'Mild-Moderate', key: '1', color: '#FF9800' },
+                  { label: 'Severe-Critical', key: '2', color: '#E91E63' }
+                ].map((item, index) => {
+                  const probability = prediction.data.probabilities[item.key as '0' | '1' | '2'];
+                  const percentage = (probability * 100);
+
+                  return (
+                    <div key={index} className="flex items-center gap-3">
+                      <div className="w-36 text-sm font-medium">{item.label}</div>
+                      <div className="flex-1">
+                        <div className="w-full bg-gray-200 rounded-full h-6 relative">
+                          <div
+                            className="h-6 rounded-full flex items-center justify-end pr-2 text-white text-xs font-semibold transition-all duration-500"
+                            style={{
+                              width: `${percentage}%`,
+                              backgroundColor: item.color
+                            }}
+                          >
+                            {percentage > 10 && `${percentage.toFixed(1)}%`}
+                          </div>
+                          {percentage <= 10 && percentage > 0 && (
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">
+                              {percentage.toFixed(1)}%
+                            </span>
+                          )}
                         </div>
-                        {item.value <= 10 && item.value > 0 && (
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">
-                            {item.value.toFixed(1)}%
-                          </span>
-                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -464,15 +458,10 @@ export default function SimpleAssessment() {
               <h3 className="text-xl font-semibold mb-4">Recommended Actions</h3>
               <div
                 className="border-l-4 rounded-lg p-4"
-                style={{ borderColor: prediction.data.display.severity_color }}
+                style={{ borderColor: prediction.data.risk_color }}
               >
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-sm font-semibold uppercase tracking-wide">
-                    Urgency: {prediction.data.recommendation.urgency}
-                  </span>
-                </div>
                 <ul className="space-y-2">
-                  {prediction.data.recommendation.action_items.map((item, index) => (
+                  {prediction.data.action_items.map((item, index) => (
                     <li key={index} className="flex items-start gap-2">
                       <ArrowRight className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                       <span className="text-gray-700">{item}</span>

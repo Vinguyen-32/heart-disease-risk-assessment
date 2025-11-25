@@ -9,14 +9,14 @@ San Jose State University
 
 ## 🎯 Project Overview
 
-A **machine learning system** for predicting heart disease severity levels (0-4 scale) using clinical data. Features a full-stack implementation with React frontend, Flask backend, and advanced ML pipeline.
+A **machine learning system** for predicting heart disease severity using clinical data. Features a full-stack implementation with React frontend, Flask backend, and advanced ML pipeline using **3-class severity grouping** for improved accuracy.
 
 ### Key Achievements
 
 - ✅ **Binary Classification**: 85.1% F1-score (**13% above 75% target**)
-- ✅ **Multi-class Classification**: 58.6% F1-score (competitive with published research)
+- ✅ **3-Class Severity**: 65.4% F1-score (**+11.6% improvement** over 5-class approach)
 - ✅ **Full-Stack Demo**: Working end-to-end application
-- ✅ **Advanced Techniques**: Ordinal classification, ensemble methods, SMOTE
+- ✅ **Advanced Techniques**: Class grouping, ordinal classification, ensemble methods, SMOTE
 
 ---
 
@@ -87,18 +87,19 @@ npm run dev
 
 **Achievement**: **85.1% F1** vs 75% target → **+13.5% above goal** ✅
 
-### Multi-class Classification (Severity 0-4)
+### Multi-class Classification (3-Class Severity Grouping)
 
-| Approach | Test F1 | Accuracy | MAE | Status |
-|----------|---------|----------|-----|--------|
-| **XGBoost Ordinal** | **0.5863** | 0.5815 | 0.592 | ✅ **BEST** |
-| Gradient Boosting | 0.5793 | 0.5761 | 0.658 | - |
-| Hierarchical | 0.5595 | 0.5598 | - | - |
+| Approach | Test F1 | Accuracy | Imbalance | Status |
+|----------|---------|----------|-----------|--------|
+| **3-Class (XGBoost)** | **0.6544** | 0.6576 | 3.04:1 | ✅ **CURRENT** |
+| 5-Class (XGBoost Ordinal) | 0.5863 | 0.5815 | 15:1 | Previous |
+| 5-Class (Gradient Boosting) | 0.5793 | 0.5761 | 15:1 | - |
 
-**Best Model**: XGBoost with ordinal-aware sample weighting
-- **Clinical Safety**: Only 14.1% severe errors (off by 2+ levels)
-- **Competitive**: Published research typically achieves 55-65% F1
-- **Improved**: +1.2% over baseline
+**Current Model**: 3-class severity grouping
+- **Classes**: 0 (No Disease), 1 (Mild-Moderate), 2 (Severe-Critical)
+- **Improvement**: +11.6% F1-score over 5-class approach
+- **Better Balance**: Reduced imbalance from 15:1 to 3.04:1
+- **Per-Class F1**: Class 0: 0.79, Class 1: 0.60, Class 2: 0.38
 
 ---
 
@@ -122,9 +123,9 @@ npm run dev
                                                  │
                                                  v
                                        ┌──────────────────┐
-                                       │  XGBoost Ordinal │
+                                       │  XGBoost 3-Class │
                                        │  Classifier      │
-                                       │  F1 = 0.5863     │
+                                       │  F1 = 0.6544     │
                                        └──────────────────┘
 ```
 
@@ -138,8 +139,9 @@ cmpe-257-ML-heart-disease-risk-assessment/
 ├── 📓 notebooks/
 │   ├── data_preprocessing.ipynb        ⭐ EDA & preprocessing
 │   ├── model_training.ipynb            ⭐ Model development
-│   ├── ordinal_classification.py       ⭐ Ordinal experiments
-│   └── phase1_improvements.py          Advanced techniques
+│   ├── three_class_grouping.ipynb      ⭐ 3-class model (current)
+│   ├── ordinal_classification.ipynb    Ordinal experiments
+│   └── phase1_improvements.ipynb       Advanced techniques
 │
 ├── 🔧 src/api/
 │   ├── app.py                          ⭐ Flask API (3 endpoints)
@@ -158,16 +160,18 @@ cmpe-257-ML-heart-disease-risk-assessment/
 │   └── README.md                       Frontend documentation
 │
 ├── 🤖 models/
-│   ├── best_ordinal_model.pkl          ⭐ XGBoost (F1=0.5863)
-│   ├── hierarchical_classifier.pkl     Hierarchical model
-│   ├── preprocessing_artifacts.pkl     Scalers, encoders
-│   └── model_metadata.pkl              Performance metrics
+│   ├── best_3class_model.pkl           ⭐ XGBoost 3-class (F1=0.6544)
+│   ├── preprocessing_artifacts_3class.pkl  ⭐ Scalers, encoders
+│   ├── model_metadata_3class.pkl       ⭐ Performance metrics
+│   ├── best_ordinal_model.pkl          Previous 5-class model
+│   └── hierarchical_classifier.pkl     Hierarchical model
 │
 ├── 📊 data/
 │   ├── raw/                            UCI heart disease dataset
 │   └── processed/                      Train/test splits
 │
 ├── 📈 results/
+│   ├── three_class_grouping_results.csv   ⭐ 3-class experiment results
 │   ├── ordinal_classification_results.csv
 │   ├── phase1_improvements_results.csv
 │   └── *.png                           Confusion matrices, plots
@@ -193,8 +197,9 @@ cmpe-257-ML-heart-disease-risk-assessment/
 - **Source**: UCI Heart Disease (4 medical centers)
 - **Size**: 920 patients
 - **Features**: 14 clinical attributes → 18 after engineering
-- **Classes**: 5 severity levels (0: none, 1-4: increasing severity)
-- **Challenge**: Extreme 15:1 class imbalance (only 28 samples in class 4)
+- **Classes**: 3 severity groups (0: No Disease, 1: Mild-Moderate, 2: Severe-Critical)
+- **Original Challenge**: Extreme 15:1 class imbalance in 5-class approach
+- **Solution**: 3-class grouping reduced imbalance to 3.04:1
 
 ### Preprocessing Pipeline
 
@@ -224,9 +229,10 @@ cmpe-257-ML-heart-disease-risk-assessment/
 - Hyperparameter tuning: RandomizedSearchCV (50 iterations, 5-fold CV)
 
 **Multi-class Classification**:
-- Direct multi-class (Gradient Boosting, Random Forest)
+- **3-class grouping** (XGBoost with class consolidation) ✅ **CURRENT**
+- 5-class ordinal (XGBoost with sample weighting)
 - Hierarchical (Binary → Severity)
-- **Ordinal classification** (XGBoost with sample weighting) ✅
+- Direct multi-class (Gradient Boosting, Random Forest)
 
 ---
 
@@ -234,8 +240,8 @@ cmpe-257-ML-heart-disease-risk-assessment/
 
 - **Single-page assessment form** with 4 sections (Demographics, Symptoms, Vitals, Diagnostics)
 - **Real-time validation** using React Hook Form
-- **Color-coded results** (green/yellow/orange/red/purple for severity 0-4)
-- **Probability visualization** with Recharts bar charts
+- **Color-coded results** (green/orange/red-pink for 3 severity levels)
+- **Probability visualization** with Recharts bar charts (3 classes)
 - **Action items** personalized by risk level
 - **Responsive design** (mobile-friendly)
 - **Medical disclaimer** and terms & conditions
@@ -279,12 +285,12 @@ Predicts heart disease severity level.
 {
   "success": true,
   "data": {
-    "prediction": 3,
+    "prediction": 2,
     "confidence": 0.78,
-    "probabilities": {"0": 0.05, "1": 0.08, "2": 0.09, "3": 0.78, "4": 0.00},
-    "risk_category": "Severe",
-    "risk_color": "red",
-    "action_items": ["Consult cardiologist urgently", ...]
+    "probabilities": {"0": 0.05, "1": 0.17, "2": 0.78},
+    "risk_category": "Severe-Critical",
+    "risk_color": "#E91E63",
+    "action_items": ["Contact cardiologist IMMEDIATELY", ...]
   }
 }
 ```
@@ -314,18 +320,34 @@ See [src/api/README.md](src/api/README.md) for full API documentation.
 
 ---
 
-## 🎯 Why Multi-class Didn't Reach 0.75 Target
+## 🎯 Multi-class Classification Progress
 
-Our multi-class F1 (58.6%) is below the 75% target due to:
+### 3-Class Grouping Improvement
 
-1. **Extreme class imbalance** (15:1 ratio, only 28 samples in class 4)
-2. **Poor class separability** (classes 3 & 4 have nearly identical features)
-3. **Massive missing data** (66% in `ca`, 53% in `thal` - the most predictive features)
-4. **Small dataset** (920 total samples divided across 5 classes)
+We implemented **3-class severity grouping** to address extreme class imbalance:
 
-**Context**: Published research on this dataset typically achieves **55-65% multi-class F1**, making our 58.6% competitive.
+**Previous (5-class)**: 58.6% F1-score
+- Classes 0-4 with 15:1 imbalance
+- Classes 3 & 4 nearly identical (only 28 samples in class 4)
 
-**Mitigation**: Our **binary classification exceeded target by 13%** (85.1% vs 75%), demonstrating our methodology works. We also implemented **ordinal classification** which improves clinical safety by reducing severe errors.
+**Current (3-class)**: **65.4% F1-score (+11.6% improvement)**
+- Class 0: No Disease
+- Class 1: Mild-Moderate (combined 1-2)
+- Class 2: Severe-Critical (combined 3-4)
+- Reduced imbalance to 3.04:1
+
+### Gap to Target
+
+Current F1 (65.4%) vs target (75%) = **-12.8% gap**
+
+**Remaining challenges**:
+1. Class 2 (Severe-Critical) still has low F1 (0.38) with only 135 samples
+2. Massive missing data (66% in `ca`, 53% in `thal`)
+3. Small dataset (920 samples)
+
+**Context**: Published research achieves 55-65% F1, making our 65.4% **competitive**.
+
+**Success**: Binary classification **exceeded target by 13%** (85.1% vs 75%), demonstrating strong methodology.
 
 ---
 
@@ -339,7 +361,7 @@ Our multi-class F1 (58.6%) is below the 75% target due to:
 ### Medium-term (1-2 months)
 - Full backend with PostgreSQL + JWT auth
 - User dashboard for assessment history
-- 3-class grouping (0, 1-2, 3-4) for better performance
+- Further optimization (ensemble methods, cost-sensitive learning)
 
 ### Long-term (3-6 months)
 - Cloud deployment (Vercel + Railway)
@@ -397,8 +419,8 @@ For questions or issues:
 
 ---
 
-**Status**: ✅ **Production-ready for demo**
-**Last Updated**: November 24, 2025
-**Version**: 1.0.0
+**Status**: ✅ **Production-ready for demo** (3-class model)
+**Last Updated**: November 25, 2025
+**Version**: 1.1.0 (3-class severity grouping)
 
 **GitHub**: [Lambert-Nguyen/cmpe-257-ML-heart-disease-risk-assessment](https://github.com/Lambert-Nguyen/cmpe-257-ML-heart-disease-risk-assessment)

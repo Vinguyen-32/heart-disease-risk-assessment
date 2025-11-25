@@ -2,7 +2,7 @@
 
 **Flask REST API for Heart Disease Prediction**
 
-This is the backend API for the Heart Disease Risk Assessment System. It uses an XGBoost Ordinal Classifier (F1 = 0.5863) to predict heart disease severity levels (0-4) and provides a RESTful interface for the React frontend.
+This is the backend API for the Heart Disease Risk Assessment System. It uses an XGBoost 3-Class Classifier (F1 = 0.6544) to predict heart disease severity in 3 categories (No Disease, Mild-Moderate, Severe-Critical) and provides a RESTful interface for the React frontend.
 
 ---
 
@@ -40,7 +40,7 @@ The API will be available at **http://localhost:8000**
 |------------|---------|---------|
 | **Flask** | 3.1.0 | Web framework |
 | **Flask-CORS** | 5.0.0 | Cross-origin support |
-| **XGBoost** | 2.1.3 | ML model (ordinal classifier) |
+| **XGBoost** | 2.1.3 | ML model (3-class classifier) |
 | **scikit-learn** | 1.5.2 | Preprocessing pipeline |
 | **pandas** | 2.2.3 | Data manipulation |
 | **NumPy** | 2.0.2 | Numerical operations |
@@ -57,10 +57,11 @@ src/api/
 └── README.md                   # This file
 
 models/                         # ML models and artifacts
-├── best_ordinal_model.pkl      # ⭐ XGBoost Ordinal (F1=0.5863)
-├── preprocessing_artifacts.pkl # Scaler, encoders, imputer
-├── smote_multiclass.pkl        # BorderlineSMOTE
-└── model_metadata.pkl          # Performance metrics
+├── best_3class_model.pkl       # ⭐ XGBoost 3-Class (F1=0.6544)
+├── preprocessing_artifacts_3class.pkl # ⭐ Scaler, encoders, imputer
+├── model_metadata_3class.pkl   # ⭐ Performance metrics
+├── best_ordinal_model.pkl      # Previous 5-class model
+└── smote_multiclass.pkl        # BorderlineSMOTE
 ```
 
 ---
@@ -69,7 +70,7 @@ models/                         # ML models and artifacts
 
 ### 1. POST /api/predict
 
-Predicts heart disease severity level (0-4) from clinical data.
+Predicts heart disease severity (3 categories) from clinical data.
 
 **Request Body**:
 ```json
@@ -113,45 +114,43 @@ Predicts heart disease severity level (0-4) from clinical data.
 {
   "success": true,
   "data": {
-    "prediction": 3,
+    "prediction": 2,
     "confidence": 0.78,
     "probabilities": {
       "0": 0.05,
-      "1": 0.08,
-      "2": 0.09,
-      "3": 0.78,
-      "4": 0.00
+      "1": 0.17,
+      "2": 0.78
     },
-    "risk_category": "Severe",
-    "risk_color": "red",
+    "risk_category": "Severe-Critical",
+    "risk_color": "#E91E63",
     "action_items": [
-      "Consult a cardiologist urgently within 1 week",
-      "Bring all test results and medication history",
-      "Do not start new exercise regimen without medical clearance",
-      "Monitor symptoms closely (chest pain, shortness of breath)",
-      "Consider emergency care for severe symptoms"
+      "Contact a cardiologist IMMEDIATELY for urgent consultation (within 24-48 hours)",
+      "Do not delay - severe risk factors detected",
+      "Avoid strenuous physical activity until medically evaluated",
+      "Keep a detailed symptom diary (chest pain, breathing difficulty, fatigue)",
+      "Have someone accompany you to medical appointments",
+      "Bring complete medical history, current medications, and this assessment",
+      "If experiencing acute symptoms (severe chest pain, shortness of breath), call 911"
     ]
   }
 }
 ```
 
 **Response Fields**:
-- `prediction`: Severity level (0 = None, 1 = Mild, 2 = Moderate, 3 = Severe, 4 = Very Severe)
+- `prediction`: Severity level (0 = No Disease, 1 = Mild-Moderate, 2 = Severe-Critical)
 - `confidence`: Confidence score (0.0-1.0) for the predicted class
-- `probabilities`: Probability distribution across all 5 severity levels
+- `probabilities`: Probability distribution across 3 severity categories
 - `risk_category`: Human-readable risk category
-- `risk_color`: UI color code for severity visualization
+- `risk_color`: UI color hex code for severity visualization
 - `action_items`: Personalized recommendations based on severity
 
 **Severity Level Mapping**:
 
 | Level | Category | Color | UI Hex |
 |-------|----------|-------|--------|
-| 0 | None | green | #10b981 |
-| 1 | Mild | yellow | #f59e0b |
-| 2 | Moderate | orange | #f97316 |
-| 3 | Severe | red | #ef4444 |
-| 4 | Very Severe | purple | #a855f7 |
+| 0 | No Disease | Green | #4CAF50 |
+| 1 | Mild-Moderate | Orange | #FF9800 |
+| 2 | Severe-Critical | Red-Pink | #E91E63 |
 
 **Error Responses**:
 
