@@ -1,6 +1,6 @@
 """
-Flask API for Heart Disease Risk Assessment
-Main application entry point
+Flask API for Heart Disease Risk Assessment - 3-Class Version
+Main application entry point with 3-severity grouping
 """
 
 from flask import Flask, request, jsonify
@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import uuid
-import os
 from pathlib import Path
+from sklearn.preprocessing import LabelEncoder
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend access
@@ -19,75 +19,42 @@ CORS(app)  # Enable CORS for frontend access
 # Get project root directory
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
-
-# Define HierarchicalClassifier class (must match the training definition)
-class HierarchicalClassifier:
-    """
-    Two-stage hierarchical classifier:
-    Stage 1: Binary (Disease vs No Disease)
-    Stage 2: Multi-class (Severity Level for Disease cases)
-    """
-    def __init__(self, binary_model, multiclass_model):
-        self.binary_model = binary_model
-        self.multiclass_model = multiclass_model
-
-    def predict(self, X):
-        # Stage 1: Binary prediction
-        binary_pred = self.binary_model.predict(X)
-
-        # Initialize final predictions
-        final_pred = np.zeros(len(X), dtype=int)
-
-        # Stage 2: For disease cases, predict severity
-        disease_mask = binary_pred == 1
-        if disease_mask.sum() > 0:
-            X_disease = X[disease_mask]
-            severity_pred = self.multiclass_model.predict(X_disease)
-            final_pred[disease_mask] = severity_pred
-
-        return final_pred
-
-    def predict_proba(self, X):
-        # Get binary probabilities
-        binary_proba = self.binary_model.predict_proba(X)
-
-        # Initialize final probabilities (5 classes: 0-4)
-        final_proba = np.zeros((len(X), 5))
-
-        # No disease probability (class 0)
-        final_proba[:, 0] = binary_proba[:, 0]
-
-        # Disease cases
-        disease_prob = binary_proba[:, 1]
-
-        # Get multi-class probabilities
-        multi_proba = self.multiclass_model.predict_proba(X)
-
-        # Extract severity probabilities (classes 1-4) and renormalize
-        severity_proba = multi_proba[:, 1:5]  # Get classes 1-4
-        severity_sum = severity_proba.sum(axis=1, keepdims=True)
-        severity_proba_normalized = severity_proba / severity_sum  # Renormalize to sum to 1
-
-        # Distribute disease probability across severity levels
-        final_proba[:, 1:5] = disease_prob.reshape(-1, 1) * severity_proba_normalized
-
-        return final_proba
-
-
 # Load models and artifacts at startup
-print("Loading models and preprocessing artifacts...")
+print("="*70)
+print("Heart Disease Risk Assessment API - 3-Class Version")
+print("="*70)
+print("\nLoading models and preprocessing artifacts...")
 
 try:
-    with open(PROJECT_ROOT / 'models' / 'hierarchical_classifier.pkl', 'rb') as f:
-        hierarchical_model = pickle.load(f)
+    # Load 3-class model
+    model_path = PROJECT_ROOT / 'models' / 'best_3class_model.pkl'
+    with open(model_path, 'rb') as f:
+        model_3class = pickle.load(f)
+    print(f"✓ Loaded 3-class model: {model_path}")
 
-    with open(PROJECT_ROOT / 'data' / 'processed' / 'preprocessing_artifacts.pkl', 'rb') as f:
+    # Load preprocessing artifacts
+    artifacts_path = PROJECT_ROOT / 'models' / 'preprocessing_artifacts_3class.pkl'
+    with open(artifacts_path, 'rb') as f:
         preprocessing_artifacts = pickle.load(f)
+    print(f"✓ Loaded preprocessing artifacts: {artifacts_path}")
 
-    with open(PROJECT_ROOT / 'models' / 'model_metadata.pkl', 'rb') as f:
+    # Load model metadata
+    metadata_path = PROJECT_ROOT / 'models' / 'model_metadata_3class.pkl'
+    with open(metadata_path, 'rb') as f:
         model_metadata = pickle.load(f)
+    print(f"✓ Loaded metadata: {metadata_path}")
 
-    print("✓ Models loaded successfully!")
+    print("\n" + "="*70)
+    print("MODEL INFORMATION")
+    print("="*70)
+    print(f"Model: {model_metadata['model_name']}")
+    print(f"Classes: {model_metadata['num_classes']}")
+    print(f"Test F1-Score: {model_metadata['performance']['test_f1_weighted']:.4f}")
+    print(f"Test Accuracy: {model_metadata['performance']['test_accuracy']:.4f}")
+    print("\nClass Mapping:")
+    for code, name in model_metadata['class_mapping'].items():
+        print(f"  {code}: {name}")
+
 except Exception as e:
     print(f"✗ Error loading models: {e}")
     raise
@@ -103,130 +70,95 @@ def preprocess_input(raw_input_dict):
     Returns:
         numpy.ndarray: Preprocessed and scaled features
     """
-    identifier_features = ['id', 'dataset']
+    # Create DataFrame
     df = pd.DataFrame([raw_input_dict])
 
-    # Remove identifier columns
+    # Drop non-feature columns if present
+    identifier_features = ['id', 'dataset']
     for col in identifier_features:
         if col in df.columns:
             df = df.drop(columns=[col])
 
-    # Convert numeric features
-    numeric_features = preprocessing_artifacts['numeric_features']
-    for col in numeric_features:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+    # Convert sex to numeric if needed
+    if 'sex' in df.columns:
+        sex_map = {'male': 1, 'female': 0, 1: 1, 0: 0, '1': 1, '0': 0}
+        df['sex'] = df['sex'].map(lambda x: sex_map.get(str(x).lower(), 1))
 
-    # Convert categorical features to lowercase
-    categorical_features = preprocessing_artifacts['categorical_features']
-    for col in categorical_features:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.lower()
+    # Convert boolean fields
+    bool_fields = ['fbs', 'exang']
+    for field in bool_fields:
+        if field in df.columns:
+            if isinstance(df[field].iloc[0], bool):
+                df[field] = df[field].astype(int)
+            elif isinstance(df[field].iloc[0], str):
+                df[field] = df[field].map({'true': 1, 'false': 0, '1': 1, '0': 0}).fillna(0).astype(int)
 
-    X = df.copy()
+    # Feature Engineering (same as training)
+    # Age groups (WHO categories)
+    if 'age' in df.columns:
+        df['age_group'] = pd.cut(df['age'], bins=[0, 40, 60, 80, 100], labels=[0, 1, 2, 3])
+        df['age_group'] = df['age_group'].astype(float).fillna(1)
 
-    # Create missing indicators for high-missing features
-    high_missing_features = ['ca', 'thal', 'slope']
-    for col in high_missing_features:
-        if col in X.columns:
-            X[f'{col}_missing'] = (X[col].isnull() | (X[col] == 'none') | (X[col] == 'nan')).astype(int)
+    # Blood pressure categories (AHA guidelines)
+    if 'trestbps' in df.columns:
+        df['bp_category'] = pd.cut(df['trestbps'], bins=[0, 120, 130, 140, 200], labels=[0, 1, 2, 3])
+        df['bp_category'] = df['bp_category'].astype(float).fillna(1)
 
-    # Encode categorical variables
-    label_encoders = preprocessing_artifacts['label_encoders']
-    for col in categorical_features:
-        if col in X.columns:
-            le = label_encoders.get(col)
-            if le is not None:
-                valid_classes = [str(c).lower() for c in le.classes_]
+    # Cholesterol categories
+    if 'chol' in df.columns:
+        df['chol_category'] = pd.cut(df['chol'], bins=[0, 200, 240, 600], labels=[0, 1, 2])
+        df['chol_category'] = df['chol_category'].astype(float).fillna(1)
 
-                def map_to_valid_class(x):
-                    if pd.isna(x) or str(x).lower() == 'nan' or str(x).lower() == 'none':
-                        return le.classes_[0]
-                    x_lower = str(x).lower()
-                    if x_lower in valid_classes:
-                        idx = valid_classes.index(x_lower)
-                        return le.classes_[idx]
-                    else:
-                        return le.classes_[0]
+    # Heart rate reserve
+    if 'age' in df.columns and 'thalch' in df.columns:
+        df['hr_reserve'] = 220 - df['age'] - df['thalch']
 
-                X[col] = X[col].apply(map_to_valid_class)
-                X[col] = le.transform(X[col])
-            else:
-                X[col] = 0
-
-    # Convert all to numeric
-    for col in X.columns:
-        if X[col].dtype == 'object':
-            X[col] = pd.to_numeric(X[col], errors='coerce')
-
-    # Impute missing values
-    imputation_values = {
-        'age': 55,
-        'trestbps': 130,
-        'chol': 240,
-        'thalch': 150,
-        'oldpeak': 0.8,
-    }
-
-    for col in X.columns:
-        if X[col].isnull().any():
-            if col in imputation_values:
-                X[col] = X[col].fillna(imputation_values[col])
-            else:
-                X[col] = X[col].fillna(0)
-
-    # Feature engineering
-    if 'age' in X.columns:
-        X['age_group'] = pd.cut(X['age'], bins=[0, 45, 60, 75, 100], labels=[0, 1, 2, 3])
-        X['age_group'] = X['age_group'].astype(float).fillna(1)
-
-    if 'trestbps' in X.columns:
-        X['bp_category'] = pd.cut(X['trestbps'], bins=[0, 120, 130, 140, 200], labels=[0, 1, 2, 3])
-        X['bp_category'] = X['bp_category'].astype(float).fillna(1)
-
-    if 'chol' in X.columns:
-        X['chol_category'] = pd.cut(X['chol'], bins=[0, 200, 240, 500], labels=[0, 1, 2])
-        X['chol_category'] = X['chol_category'].astype(float).fillna(1)
-
-    if 'age' in X.columns and 'thalch' in X.columns:
-        predicted_max_hr = 220 - X['age']
-        X['hr_reserve'] = predicted_max_hr - X['thalch']
-
-    # Calculate cardiovascular risk score
+    # Composite cardiovascular risk score
     risk_score = 0
-    if 'trestbps' in X.columns:
-        risk_score += (X['trestbps'] > 140).astype(int) * 2
-    if 'chol' in X.columns:
-        risk_score += (X['chol'] > 240).astype(int) * 2
-    if 'fbs' in X.columns:
-        risk_score += X['fbs']
-    X['cv_risk_score'] = risk_score
+    if 'age' in df.columns:
+        risk_score += (df['age'] > 55).astype(int) * 2
+    if 'trestbps' in df.columns:
+        risk_score += (df['trestbps'] > 140).astype(int) * 2
+    if 'chol' in df.columns:
+        risk_score += (df['chol'] > 240).astype(int)
+    if 'fbs' in df.columns:
+        risk_score += (df['fbs'] == 1).astype(int)
+    if 'exang' in df.columns:
+        risk_score += (df['exang'] == 1).astype(int) * 2
+    if 'oldpeak' in df.columns:
+        risk_score += (df['oldpeak'] > 2).astype(int) * 3
+    df['cv_risk_score'] = risk_score
 
-    # Fill any remaining NaN
-    X = X.fillna(0)
+    # Label Encoding for categorical features
+    label_encoders = preprocessing_artifacts['label_encoders']
+    for col, le in label_encoders.items():
+        if col in df.columns:
+            # Handle unseen categories
+            df[col] = df[col].astype(str)
+            df[col] = df[col].apply(lambda x: x if x in le.classes_ else le.classes_[0])
+            df[col] = le.transform(df[col])
 
-    # Ensure all expected features exist
-    expected_features = preprocessing_artifacts['feature_names']
-    for feature in expected_features:
-        if feature not in X.columns:
-            X[feature] = 0
-
-    # Reorder columns to match training
-    X = X[expected_features]
+    # Impute missing values using KNN imputer
+    imputer = preprocessing_artifacts['imputer']
+    df_imputed = pd.DataFrame(
+        imputer.transform(df),
+        columns=df.columns,
+        index=df.index
+    )
 
     # Scale features
     scaler = preprocessing_artifacts['scaler']
-    X_scaled = scaler.transform(X)
+    X_scaled = scaler.transform(df_imputed)
 
     return X_scaled
 
 
-def get_severity_config(severity_level):
+def get_severity_config_3class(severity_level):
     """
-    Get UI configuration for severity level.
+    Get UI configuration for 3-class severity level.
 
     Args:
-        severity_level: Integer 0-4
+        severity_level: Integer 0-2
 
     Returns:
         dict: UI configuration including colors, icons, messages
@@ -235,53 +167,37 @@ def get_severity_config(severity_level):
         0: {
             "title": "Low Risk - Looking Good!",
             "message": "Based on your information, your heart disease risk appears to be low. Keep up the healthy habits!",
-            "severity_color": "#4CAF50",
+            "severity_color": "#4CAF50",  # Green
             "background_color": "#E8F5E9",
             "icon": "check_circle",
             "urgency": "none"
         },
         1: {
-            "title": "Mild Risk Detected",
-            "message": "Your assessment shows some factors that may increase heart disease risk. A conversation with your doctor is recommended.",
-            "severity_color": "#FFC107",
-            "background_color": "#FFF8E1",
-            "icon": "info",
-            "urgency": "low"
-        },
-        2: {
-            "title": "Moderate Risk Detected",
-            "message": "Your assessment indicates a moderate level of heart disease risk. We recommend scheduling a cardiology consultation.",
-            "severity_color": "#FF6B35",
+            "title": "Mild to Moderate Risk Detected",
+            "message": "Your assessment shows some factors that indicate mild to moderate heart disease risk. A consultation with your doctor is recommended to discuss lifestyle changes and monitoring.",
+            "severity_color": "#FF9800",  # Orange
             "background_color": "#FFF3E0",
             "icon": "warning",
             "urgency": "medium"
         },
-        3: {
-            "title": "High Risk Detected",
-            "message": "Your assessment shows significant heart disease risk factors. Urgent medical attention is recommended.",
-            "severity_color": "#E91E63",
+        2: {
+            "title": "Severe Risk - Urgent Action Needed",
+            "message": "Your assessment indicates severe heart disease risk factors. Seek medical attention urgently within 24-48 hours.",
+            "severity_color": "#E91E63",  # Red-Pink
             "background_color": "#FCE4EC",
             "icon": "error",
             "urgency": "high"
-        },
-        4: {
-            "title": "CRITICAL - Immediate Action Needed",
-            "message": "Your assessment indicates severe heart disease risk. Seek immediate emergency medical attention.",
-            "severity_color": "#9C27B0",
-            "background_color": "#F3E5F5",
-            "icon": "priority_high",
-            "urgency": "critical"
         }
     }
     return configs.get(severity_level, configs[0])
 
 
-def get_action_items(severity_level):
+def get_action_items_3class(severity_level):
     """
-    Get action items for severity level.
+    Get action items for 3-class severity level.
 
     Args:
-        severity_level: Integer 0-4
+        severity_level: Integer 0-2
 
     Returns:
         list: Action items for the user
@@ -295,32 +211,21 @@ def get_action_items(severity_level):
             "Monitor your blood pressure at home monthly"
         ],
         1: [
-            "Schedule a consultation with your primary care doctor",
-            "Discuss lifestyle modifications (diet, exercise, stress)",
-            "Get a comprehensive metabolic panel blood test",
-            "Consider joining a cardiac rehabilitation program",
-            "Monitor symptoms and track any changes"
+            "Schedule a consultation with your primary care doctor within 2-4 weeks",
+            "Discuss lifestyle modifications (diet, exercise, stress management)",
+            "Get a comprehensive metabolic panel and lipid profile blood test",
+            "Consider joining a cardiac rehabilitation or wellness program",
+            "Monitor symptoms (chest pain, shortness of breath) and track changes",
+            "Reduce sodium intake and maintain healthy weight"
         ],
         2: [
-            "Schedule a cardiology consultation within 2-4 weeks",
-            "Bring this assessment and medical history to appointment",
-            "Continue any prescribed medications",
-            "Make immediate lifestyle changes (diet, exercise, smoking cessation)",
-            "Monitor blood pressure daily"
-        ],
-        3: [
-            "Contact a cardiologist immediately for urgent consultation",
-            "Do not delay - call within 24-48 hours",
-            "Avoid strenuous physical activity until evaluated",
-            "Keep a symptom diary",
-            "Have someone accompany you to appointments"
-        ],
-        4: [
-            "SEEK IMMEDIATE EMERGENCY CARE",
-            "Go to the nearest emergency room or call 911",
-            "Do not drive yourself - call ambulance or have someone drive you",
-            "Bring a list of medications and medical history",
-            "Inform ER staff of this risk assessment"
+            "Contact a cardiologist IMMEDIATELY for urgent consultation (within 24-48 hours)",
+            "Do not delay - severe risk factors detected",
+            "Avoid strenuous physical activity until medically evaluated",
+            "Keep a detailed symptom diary (chest pain, breathing difficulty, fatigue)",
+            "Have someone accompany you to medical appointments",
+            "Bring complete medical history, current medications, and this assessment",
+            "If experiencing acute symptoms (severe chest pain, shortness of breath), call 911"
         ]
     }
     return actions.get(severity_level, actions[0])
@@ -349,7 +254,7 @@ def get_confidence_description(confidence):
 @app.route('/api/predict', methods=['POST'])
 def predict():
     """
-    Main prediction endpoint with UI-optimized response.
+    Main prediction endpoint with UI-optimized response (3-class version).
 
     Request Body:
         JSON with patient data (13 clinical features)
@@ -395,86 +300,41 @@ def predict():
         # Preprocess input
         X_processed = preprocess_input(patient_data)
 
-        # Get prediction
-        severity_level = int(hierarchical_model.predict(X_processed)[0])
-        probabilities = hierarchical_model.predict_proba(X_processed)[0]
+        # Get prediction (0-2)
+        severity_level = int(model_3class.predict(X_processed)[0])
+        probabilities = model_3class.predict_proba(X_processed)[0]
         confidence = float(probabilities[severity_level])
 
         # Get configuration
-        config = get_severity_config(severity_level)
-        actions = get_action_items(severity_level)
+        config = get_severity_config_3class(severity_level)
+        actions = get_action_items_3class(severity_level)
         confidence_desc = get_confidence_description(confidence)
 
-        # Severity labels
-        severity_labels = [
-            "No Heart Disease",
-            "Mild Heart Disease",
-            "Moderate Heart Disease",
-            "Severe Heart Disease",
-            "Very Severe Heart Disease"
-        ]
+        # Severity labels (3 classes)
+        class_mapping = model_metadata['class_mapping']
+        severity_label = class_mapping[severity_level]
 
-        risk_categories = [
-            "Low Risk",
-            "Moderate Risk",
-            "High Risk",
-            "Very High Risk",
-            "Critical Risk"
-        ]
+        risk_categories = {
+            0: "Low Risk",
+            1: "Moderate Risk",
+            2: "High Risk"
+        }
+
+        # Chart colors for 3 classes
+        chart_colors = ["#4CAF50", "#FF9800", "#E91E63"]
 
         # Build response
         response = {
             "success": True,
             "data": {
-                "prediction": {
-                    "severity_level": severity_level,
-                    "severity_label": severity_labels[severity_level],
-                    "risk_category": risk_categories[severity_level],
-                    "confidence": confidence
-                },
-                "display": {
-                    "title": config["title"],
-                    "message": config["message"],
-                    "severity_color": config["severity_color"],
-                    "background_color": config["background_color"],
-                    "severity_icon": config["icon"],
-                    "confidence_display": f"{int(confidence * 100)}% {confidence_desc['text']}",
-                    "confidence_bar": int(confidence * 100),
-                    "confidence_color": confidence_desc["color"]
-                },
-                "recommendation": {
-                    "action_items": actions,
-                    "urgency": config["urgency"],
-                    "urgency_color": config["severity_color"]
-                },
+                "prediction": severity_level,
+                "confidence": confidence,
                 "probabilities": {
-                    "chart_data": [
-                        {"label": "No Disease", "value": round(probabilities[0] * 100, 1),
-                         "color": "#4CAF50"},
-                        {"label": "Mild", "value": round(probabilities[1] * 100, 1),
-                         "color": "#FFC107"},
-                        {"label": "Moderate", "value": round(probabilities[2] * 100, 1),
-                         "color": "#FF6B35"},
-                        {"label": "Severe", "value": round(probabilities[3] * 100, 1),
-                         "color": "#E91E63"},
-                        {"label": "Very Severe", "value": round(probabilities[4] * 100, 1),
-                         "color": "#9C27B0"}
-                    ],
-                    "dominant": f"{severity_labels[severity_level]} ({round(probabilities[severity_level] * 100, 1)}%)"
+                    str(i): float(probabilities[i]) for i in range(3)
                 },
-                "next_steps": {
-                    "show_emergency_banner": severity_level >= 4,
-                    "emergency_note": "If you experience severe chest pain, shortness of breath, or other acute symptoms, call emergency services immediately (911)." if severity_level >= 3 else None
-                },
-                "disclaimer": {
-                    "text": "This is a screening tool only and not a medical diagnosis. Always consult with qualified healthcare professionals for medical advice.",
-                    "type": "warning"
-                }
-            },
-            "metadata": {
-                "model_version": "1.0.0",
-                "prediction_time": datetime.utcnow().isoformat() + "Z",
-                "report_id": f"RPT-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8]}"
+                "risk_category": severity_label,
+                "risk_color": chart_colors[severity_level],
+                "action_items": actions
             }
         }
 
@@ -482,6 +342,8 @@ def predict():
 
     except Exception as e:
         print(f"Error in prediction: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "success": False,
             "error": {
@@ -506,8 +368,8 @@ def health_check():
     """
     return jsonify({
         "status": "healthy",
-        "model_loaded": hierarchical_model is not None,
-        "version": "1.0.0",
+        "model_loaded": model_3class is not None,
+        "model_version": "3-class grouping",
         "timestamp": datetime.utcnow().isoformat() + "Z"
     }), 200
 
@@ -515,20 +377,23 @@ def health_check():
 @app.route('/api/info', methods=['GET'])
 def model_info():
     """
-    Get model information.
+    Get model information (3-class version).
 
     Returns:
         JSON with model metadata
     """
     return jsonify({
-        "model_name": "Heart Disease Risk Assessment",
-        "model_version": "1.0.0",
-        "binary_model": model_metadata.get('best_binary_model_name', 'Unknown'),
-        "multiclass_model": model_metadata.get('best_multiclass_model_name', 'Unknown'),
-        "f1_score": model_metadata.get('hierarchical_f1', 'Unknown'),
-        "features_required": 13,
-        "severity_levels": 5,
-        "description": "AI-powered heart disease risk assessment using hierarchical classification"
+        "model": model_metadata['model_name'],
+        "version": "1.0.0",
+        "num_classes": model_metadata['num_classes'],
+        "class_mapping": model_metadata['class_mapping'],
+        "performance": {
+            "test_f1": model_metadata['performance']['test_f1_weighted'],
+            "test_accuracy": model_metadata['performance']['test_accuracy'],
+            "f1_per_class": model_metadata['performance']['f1_per_class']
+        },
+        "features": len(preprocessing_artifacts['feature_names']),
+        "description": "3-class severity grouping (No Disease, Mild-Moderate, Severe-Critical) for improved accuracy"
     }), 200
 
 
@@ -538,28 +403,28 @@ def index():
     API root endpoint with documentation.
     """
     return jsonify({
-        "name": "Heart Disease Risk Assessment API",
+        "name": "Heart Disease Risk Assessment API - 3-Class Version",
         "version": "1.0.0",
+        "model": "XGBoost 3-Class Severity",
+        "f1_score": model_metadata['performance']['test_f1_weighted'],
         "endpoints": {
-            "POST /api/predict": "Get heart disease prediction",
+            "POST /api/predict": "Get heart disease prediction (3 severity levels)",
             "GET /api/health": "Health check",
             "GET /api/info": "Model information"
         },
-        "documentation": "https://github.com/your-repo/heart-disease-risk-assessment"
+        "documentation": "See README.md for full API documentation"
     }), 200
 
 
 if __name__ == '__main__':
-    print("\n" + "="*60)
-    print("Heart Disease Risk Assessment API")
-    print("="*60)
-    print("\nEndpoints:")
-    print("  POST /api/predict - Get heart disease prediction")
+    print("\n" + "="*70)
+    print("Endpoints:")
+    print("  POST /api/predict - Get heart disease prediction (3 classes)")
     print("  GET  /api/health  - Health check")
     print("  GET  /api/info    - Model information")
     print("  GET  /            - API documentation")
-    print("\n" + "="*60)
+    print("\n" + "="*70)
     print("Starting server on http://0.0.0.0:8000")
-    print("="*60 + "\n")
+    print("="*70 + "\n")
 
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    app.run(host='0.0.0.0', port=8000, debug=False)

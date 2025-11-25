@@ -7,10 +7,10 @@ Get the application running in **under 5 minutes** for demos and presentations.
 ## ✨ What You'll Get
 
 - ✅ **Single-page assessment** - All clinical questions on one form
-- ✅ **Instant predictions** - Real-time severity predictions (0-4 scale)
+- ✅ **Instant predictions** - Real-time severity predictions (3-class grouping)
 - ✅ **No database** - Stateless, session-free architecture
 - ✅ **No authentication** - Anonymous usage for demos
-- ✅ **Full ML pipeline** - XGBoost Ordinal Classifier (F1 = 0.5863)
+- ✅ **Full ML pipeline** - XGBoost 3-Class Classifier (F1 = 0.6544)
 
 **Perfect for**: Course demos, presentations, and MVP testing
 
@@ -43,23 +43,31 @@ python src/api/app.py
 
 **Expected output:**
 ```
-============================================================
-Heart Disease Risk Assessment API
-============================================================
+======================================================================
+Heart Disease Risk Assessment API - 3-Class Version
+======================================================================
 
-Model loaded successfully:
-  - XGBoost Ordinal Classifier (F1: 0.5863)
-  - 14 features, 5 severity classes
+Loading models and preprocessing artifacts...
+✓ Loaded 3-class model
+✓ Loaded preprocessing artifacts
+✓ Loaded metadata
 
-Endpoints:
-  POST /api/predict - Get heart disease prediction
-  GET  /api/health  - Health check
-  GET  /api/info    - Model information
+======================================================================
+MODEL INFORMATION
+======================================================================
+Model: XGBoost 3-Class Severity
+Classes: 3
+Test F1-Score: 0.6544
+Test Accuracy: 0.6576
 
-============================================================
+Class Mapping:
+  0: No Disease
+  1: Mild-Moderate
+  2: Severe-Critical
+
+======================================================================
 Starting server on http://0.0.0.0:8000
-============================================================
- * Running on http://127.0.0.1:8000
+======================================================================
 ```
 
 ✅ **Backend is running on http://localhost:8000**
@@ -74,7 +82,8 @@ Expected response:
 {
   "status": "healthy",
   "model_loaded": true,
-  "timestamp": "2025-11-24T10:30:45.123Z"
+  "model_version": "3-class grouping",
+  "timestamp": "2025-11-25T10:30:45.123Z"
 }
 ```
 
@@ -144,16 +153,16 @@ The form has 4 sections with 13 clinical parameters:
 
 ### 4. Get Results
 Click **"Get My Risk Assessment"** to see:
-- **Risk level** with color-coded severity (Green/Yellow/Orange/Red/Purple)
+- **Risk level** with color-coded severity (Green/Orange/Red-Pink for 3 classes)
 - **Confidence score** (0-100%)
-- **Probability distribution** chart
+- **Probability distribution** chart (3 bars for No Disease, Mild-Moderate, Severe-Critical)
 - **Personalized action items** based on severity
 
 ---
 
 ## 🧪 Example Test Data
 
-### Low Risk Patient (Expected: Class 0 - Green)
+### No Disease (Expected: Class 0 - Green)
 ```
 Age: 45
 Sex: Female
@@ -170,7 +179,7 @@ Major Vessels (ca): 0
 Thalassemia: Normal
 ```
 
-### Moderate Risk Patient (Expected: Class 2 - Orange)
+### Mild-Moderate Risk (Expected: Class 1 - Orange)
 ```
 Age: 55
 Sex: Male
@@ -187,7 +196,7 @@ Major Vessels (ca): 1
 Thalassemia: Fixed Defect
 ```
 
-### High Risk Patient (Expected: Class 3 - Red)
+### Severe-Critical Risk (Expected: Class 2 - Red-Pink)
 ```
 Age: 65
 Sex: Male
@@ -223,7 +232,7 @@ pip install -r requirements.txt
 
 ---
 
-**Problem**: `FileNotFoundError: models/best_ordinal_model.pkl`
+**Problem**: `FileNotFoundError: models/best_3class_model.pkl`
 
 **Solution**:
 ```bash
@@ -231,8 +240,8 @@ pip install -r requirements.txt
 cd cmpe-257-ML-heart-disease-risk-assessment
 python src/api/app.py
 
-# Check model files exist
-ls models/*.pkl
+# Check 3-class model files exist
+ls models/*3class*.pkl
 ```
 
 ---
