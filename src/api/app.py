@@ -1,430 +1,417 @@
 """
-Flask API for Heart Disease Risk Assessment - 3-Class Version
-Main application entry point with 3-severity grouping
+Heart Disease Risk Assessment API
+
+This Flask API provides endpoints for predicting heart disease severity
+based on clinical patient data using trained machine learning models.
 """
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import pickle
-import pandas as pd
 import numpy as np
-from datetime import datetime
-import uuid
-from pathlib import Path
-from sklearn.preprocessing import LabelEncoder
+import pandas as pd
+import pickle
+import os
+from typing import Dict, Any, Tuple
 
+# Initialize Flask app
 app = Flask(__name__)
-CORS(app)  # Enable CORS for frontend access
+CORS(app)  # Enable CORS for frontend integration
 
-# Get project root directory
-PROJECT_ROOT = Path(__file__).parent.parent.parent
+# Define HierarchicalClassifier class (needed for unpickling)
+class HierarchicalClassifier:
+    """Hierarchical classifier that combines binary and multi-class models."""
+    def __init__(self, binary_model, multiclass_model):
+        self.binary_model = binary_model
+        self.multiclass_model = multiclass_model
+        self.is_ordinal = 'Ordinal' in str(type(multiclass_model))
 
-# Load models and artifacts at startup
-print("="*70)
-print("Heart Disease Risk Assessment API - 3-Class Version")
-print("="*70)
-print("\nLoading models and preprocessing artifacts...")
+    def predict(self, X):
+        # Stage 1: Binary prediction
+        binary_pred = self.binary_model.predict(X)
 
-try:
-    # Load 3-class model
-    model_path = PROJECT_ROOT / 'models' / 'best_3class_model.pkl'
-    with open(model_path, 'rb') as f:
-        model_3class = pickle.load(f)
-    print(f"✓ Loaded 3-class model: {model_path}")
+        # Stage 2: Multi-class prediction for disease cases
+        disease_mask = binary_pred == 1
+        final_pred = np.zeros(len(X), dtype=int)
 
-    # Load preprocessing artifacts
-    artifacts_path = PROJECT_ROOT / 'models' / 'preprocessing_artifacts_3class.pkl'
-    with open(artifacts_path, 'rb') as f:
-        preprocessing_artifacts = pickle.load(f)
-    print(f"✓ Loaded preprocessing artifacts: {artifacts_path}")
+        if disease_mask.sum() > 0:
+            multi_pred = self.multiclass_model.predict(X[disease_mask])
+            # Handle ordinal models if needed
+            if self.is_ordinal:
+                multi_pred = np.clip(np.round(np.nan_to_num(multi_pred, nan=1.0)), 0, 2).astype(int)
 
-    # Load model metadata
-    metadata_path = PROJECT_ROOT / 'models' / 'model_metadata_3class.pkl'
-    with open(metadata_path, 'rb') as f:
-        model_metadata = pickle.load(f)
-    print(f"✓ Loaded metadata: {metadata_path}")
+            # Map predictions: 0 stays 0, disease cases get their multi-class predictions
+            final_pred[disease_mask] = multi_pred
 
-    print("\n" + "="*70)
-    print("MODEL INFORMATION")
-    print("="*70)
-    print(f"Model: {model_metadata['model_name']}")
-    print(f"Classes: {model_metadata['num_classes']}")
-    print(f"Test F1-Score: {model_metadata['performance']['test_f1_weighted']:.4f}")
-    print(f"Test Accuracy: {model_metadata['performance']['test_accuracy']:.4f}")
-    print("\nClass Mapping:")
-    for code, name in model_metadata['class_mapping'].items():
-        print(f"  {code}: {name}")
+        return final_pred
 
-except Exception as e:
-    print(f"✗ Error loading models: {e}")
-    raise
+    def predict_proba(self, X):
+        """Get probability estimates if available."""
+        if hasattr(self.multiclass_model, 'predict_proba'):
+            return self.multiclass_model.predict_proba(X)
+        else:
+            # Return one-hot encoded predictions if probabilities not available
+            predictions = self.predict(X)
+            n_classes = 3  # No Disease, Mild, Severe
+            proba = np.zeros((len(X), n_classes))
+            for i, pred in enumerate(predictions):
+                proba[i, pred] = 1.0
+            return proba
+
+# Global variables for models and preprocessing artifacts
+model = None
+preprocessing_artifacts = None
+metadata = None
+hierarchical_model = None
+
+# Model directory path
+MODEL_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'models')
+ARTIFACT_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'processed')
+
+def load_models():
+    """Load trained models and preprocessing artifacts."""
+    global model, preprocessing_artifacts, metadata, hierarchical_model
+    
+    try:
+        # Load preprocessing artifacts
+        with open(os.path.join(ARTIFACT_DIR, 'preprocessing_artifacts.pkl'), 'rb') as f:
+            preprocessing_artifacts = pickle.load(f)
+        
+        # Load metadata to determine which model to use
+        with open(os.path.join(MODEL_DIR, 'model_metadata.pkl'), 'rb') as f:
+            metadata = pickle.load(f)
+        
+        # Load the appropriate model based on best approach
+        if metadata['best_approach'] == 'Hierarchical':
+            with open(os.path.join(MODEL_DIR, 'hierarchical_classifier.pkl'), 'rb') as f:
+                hierarchical_model = pickle.load(f)
+            model = hierarchical_model
+            print("Loaded Hierarchical Classifier")
+        else:
+            with open(os.path.join(MODEL_DIR, 'best_multiclass_model.pkl'), 'rb') as f:
+                model = pickle.load(f)
+            print(f"Loaded Multi-class Model: {metadata['multiclass_model_name']}")
+        
+        print("Models and artifacts loaded successfully!")
+        return True
+        
+    except Exception as e:
+        print(f"Error loading models: {str(e)}")
+        return False
 
 
-def preprocess_input(raw_input_dict):
+def validate_input(data: Dict[str, Any]) -> Tuple[bool, str]:
     """
-    Preprocess raw user input to model-ready format.
-
+    Validate input data format and ranges.
+    
     Args:
-        raw_input_dict: Dictionary with patient data
-
+        data: Input dictionary containing patient data
+        
     Returns:
-        numpy.ndarray: Preprocessed and scaled features
+        Tuple of (is_valid, error_message)
     """
-    # Create DataFrame
-    df = pd.DataFrame([raw_input_dict])
+    required_fields = [
+        'age', 'sex', 'cp', 'trestbps', 'chol', 'fbs',
+        'restecg', 'thalch', 'exang', 'oldpeak', 'slope', 'ca', 'thal'
+    ]
+    
+    # Check required fields
+    for field in required_fields:
+        if field not in data:
+            return False, f"Missing required field: {field}"
+    
+    # Validate numeric ranges
+    numeric_validations = {
+        'age': (29, 77, 'years'),
+        'trestbps': (94, 200, 'mm Hg'),
+        'chol': (126, 564, 'mg/dl'),
+        'thalch': (71, 202, 'bpm'),
+        'oldpeak': (0.0, 6.2, ''),
+        'ca': (0.0, 3.0, '')
+    }
+    
+    for field, (min_val, max_val, unit) in numeric_validations.items():
+        try:
+            value = float(data[field])
+            if not (min_val <= value <= max_val):
+                unit_str = f" {unit}" if unit else ""
+                return False, f"Field '{field}' must be between {min_val} and {max_val}{unit_str}"
+        except (ValueError, TypeError):
+            return False, f"Field '{field}' must be a valid number"
+    
+    # Validate categorical fields
+    categorical_validations = {
+        'sex': ['Male', 'Female'],
+        'cp': ['typical angina', 'atypical angina', 'non-anginal', 'asymptomatic'],
+        'fbs': [True, False, 'true', 'false', 1, 0],
+        'restecg': ['normal', 'st-t abnormality', 'lv hypertrophy'],
+        'exang': [True, False, 'true', 'false', 1, 0],
+        'slope': ['upsloping', 'flat', 'downsloping'],
+        'thal': ['normal', 'fixed defect', 'reversable defect']
+    }
+    
+    for field, valid_values in categorical_validations.items():
+        if data[field] not in valid_values:
+            return False, f"Field '{field}' has invalid value. Valid values: {valid_values}"
+    
+    return True, ""
 
-    # Drop non-feature columns if present
-    identifier_features = ['id', 'dataset']
-    for col in identifier_features:
-        if col in df.columns:
-            df = df.drop(columns=[col])
 
-    # Convert sex to numeric if needed
-    if 'sex' in df.columns:
-        sex_map = {'male': 1, 'female': 0, 1: 1, 0: 0, '1': 1, '0': 0}
-        df['sex'] = df['sex'].map(lambda x: sex_map.get(str(x).lower(), 1))
-
-    # Convert boolean fields
-    bool_fields = ['fbs', 'exang']
-    for field in bool_fields:
-        if field in df.columns:
-            if isinstance(df[field].iloc[0], bool):
-                df[field] = df[field].astype(int)
-            elif isinstance(df[field].iloc[0], str):
-                df[field] = df[field].map({'true': 1, 'false': 0, '1': 1, '0': 0}).fillna(0).astype(int)
-
-    # Feature Engineering (same as training)
-    # Age groups (WHO categories)
-    if 'age' in df.columns:
-        df['age_group'] = pd.cut(df['age'], bins=[0, 40, 60, 80, 100], labels=[0, 1, 2, 3])
-        df['age_group'] = df['age_group'].astype(float).fillna(1)
-
-    # Blood pressure categories (AHA guidelines)
-    if 'trestbps' in df.columns:
-        df['bp_category'] = pd.cut(df['trestbps'], bins=[0, 120, 130, 140, 200], labels=[0, 1, 2, 3])
-        df['bp_category'] = df['bp_category'].astype(float).fillna(1)
-
-    # Cholesterol categories
-    if 'chol' in df.columns:
-        df['chol_category'] = pd.cut(df['chol'], bins=[0, 200, 240, 600], labels=[0, 1, 2])
-        df['chol_category'] = df['chol_category'].astype(float).fillna(1)
-
-    # Heart rate reserve
-    if 'age' in df.columns and 'thalch' in df.columns:
-        df['hr_reserve'] = 220 - df['age'] - df['thalch']
-
-    # Composite cardiovascular risk score
-    risk_score = 0
-    if 'age' in df.columns:
-        risk_score += (df['age'] > 55).astype(int) * 2
-    if 'trestbps' in df.columns:
-        risk_score += (df['trestbps'] > 140).astype(int) * 2
-    if 'chol' in df.columns:
-        risk_score += (df['chol'] > 240).astype(int)
-    if 'fbs' in df.columns:
-        risk_score += (df['fbs'] == 1).astype(int)
-    if 'exang' in df.columns:
-        risk_score += (df['exang'] == 1).astype(int) * 2
-    if 'oldpeak' in df.columns:
-        risk_score += (df['oldpeak'] > 2).astype(int) * 3
-    df['cv_risk_score'] = risk_score
-
-    # Label Encoding for categorical features
-    label_encoders = preprocessing_artifacts['label_encoders']
-    for col, le in label_encoders.items():
-        if col in df.columns:
-            # Handle unseen categories
-            df[col] = df[col].astype(str)
-            df[col] = df[col].apply(lambda x: x if x in le.classes_ else le.classes_[0])
-            df[col] = le.transform(df[col])
-
-    # Impute missing values using KNN imputer
-    imputer = preprocessing_artifacts['imputer']
-    df_imputed = pd.DataFrame(
-        imputer.transform(df),
-        columns=df.columns,
-        index=df.index
+def preprocess_input(data: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Preprocess input data to match model training format.
+    
+    Args:
+        data: Input dictionary containing patient data
+        
+    Returns:
+        Preprocessed DataFrame ready for prediction
+    """
+    # Create DataFrame from input
+    df = pd.DataFrame([data])
+    
+    # Handle categorical encoding
+    categorical_features = preprocessing_artifacts['categorical_features']
+    for feature in categorical_features:
+        if feature in df.columns and feature in preprocessing_artifacts['label_encoders']:
+            le = preprocessing_artifacts['label_encoders'][feature]
+            # Convert boolean to string for consistency
+            if df[feature].dtype == bool:
+                df[feature] = df[feature].astype(str)
+            # Handle case sensitivity
+            df[feature] = df[feature].astype(str)
+            
+            # If the value is not in the encoder's classes, use the most common class
+            if df[feature].iloc[0] not in le.classes_:
+                df[feature] = le.classes_[0]
+            
+            df[feature] = le.transform(df[feature])
+    
+    # Feature engineering (must match training preprocessing)
+    # 1. Age group
+    df['age_group'] = pd.cut(
+        df['age'],
+        bins=[0, 40, 50, 60, 70, 100],
+        labels=[0, 1, 2, 3, 4]
+    ).fillna(2).astype(int)  # Default to middle category if NaN
+    
+    # 2. Blood pressure category
+    df['bp_category'] = pd.cut(
+        df['trestbps'],
+        bins=[0, 120, 140, 160, 300],
+        labels=[0, 1, 2, 3]
+    ).fillna(1).astype(int)  # Default to normal-high if NaN
+    
+    # 3. Cholesterol category
+    df['chol_category'] = pd.cut(
+        df['chol'],
+        bins=[0, 200, 240, 600],
+        labels=[0, 1, 2]
+    ).fillna(1).astype(int)  # Default to borderline-high if NaN
+    
+    # 4. Heart rate reserve
+    df['hr_reserve'] = df['thalch'] - (220 - df['age'])
+    
+    # 5. Cardiovascular risk score
+    df['cv_risk_score'] = (
+        df['age'] / 100 +
+        df['trestbps'] / 200 +
+        df['chol'] / 300 +
+        df['oldpeak'] / 10
     )
-
+    
+    # Reorder columns to match training feature order
+    feature_names = preprocessing_artifacts['feature_names']
+    df = df[feature_names]
+    
     # Scale features
     scaler = preprocessing_artifacts['scaler']
-    X_scaled = scaler.transform(df_imputed)
+    df_scaled = pd.DataFrame(
+        scaler.transform(df),
+        columns=df.columns
+    )
+    
+    return df_scaled
 
-    return X_scaled
 
-
-def get_severity_config_3class(severity_level):
+def get_recommendation(prediction: int, confidence: float) -> Tuple[str, str]:
     """
-    Get UI configuration for 3-class severity level.
-
+    Generate clinical recommendation based on prediction.
+    
     Args:
-        severity_level: Integer 0-2
-
+        prediction: Predicted class (0, 1, or 2)
+        confidence: Model confidence score
+        
     Returns:
-        dict: UI configuration including colors, icons, messages
+        Tuple of (risk_level, recommendation_text)
     """
-    configs = {
-        0: {
-            "title": "Low Risk - Looking Good!",
-            "message": "Based on your information, your heart disease risk appears to be low. Keep up the healthy habits!",
-            "severity_color": "#4CAF50",  # Green
-            "background_color": "#E8F5E9",
-            "icon": "check_circle",
-            "urgency": "none"
-        },
-        1: {
-            "title": "Mild to Moderate Risk Detected",
-            "message": "Your assessment shows some factors that indicate mild to moderate heart disease risk. A consultation with your doctor is recommended to discuss lifestyle changes and monitoring.",
-            "severity_color": "#FF9800",  # Orange
-            "background_color": "#FFF3E0",
-            "icon": "warning",
-            "urgency": "medium"
-        },
-        2: {
-            "title": "Severe Risk - Urgent Action Needed",
-            "message": "Your assessment indicates severe heart disease risk factors. Seek medical attention urgently within 24-48 hours.",
-            "severity_color": "#E91E63",  # Red-Pink
-            "background_color": "#FCE4EC",
-            "icon": "error",
-            "urgency": "high"
-        }
-    }
-    return configs.get(severity_level, configs[0])
+    class_names = metadata['class_names']
+    
+    if prediction == 0:
+        risk_level = "low"
+        recommendation = (
+            "Your assessment indicates no significant heart disease risk. "
+            "Continue maintaining a healthy lifestyle with regular exercise and balanced diet. "
+            "Schedule routine check-ups as recommended by your healthcare provider."
+        )
+    elif prediction == 1:
+        risk_level = "moderate"
+        recommendation = (
+            "Your assessment indicates mild heart disease. "
+            "Consult with a cardiologist for further evaluation. "
+            "Lifestyle modifications including diet, exercise, and stress management are recommended. "
+            "Follow your doctor's advice regarding medication and monitoring."
+        )
+    else:  # prediction == 2
+        risk_level = "high"
+        recommendation = (
+            "Your assessment indicates severe heart disease requiring immediate medical attention. "
+            "Please consult with a cardiologist as soon as possible for comprehensive evaluation and treatment. "
+            "Do not delay seeking medical care. "
+            "Follow all medical advice and prescribed treatments carefully."
+        )
+    
+    # Adjust for low confidence
+    if confidence < 0.6:
+        recommendation += (
+            " Note: The prediction confidence is relatively low. "
+            "Additional testing may be needed for more accurate assessment."
+        )
+    
+    return risk_level, recommendation
 
 
-def get_action_items_3class(severity_level):
-    """
-    Get action items for 3-class severity level.
-
-    Args:
-        severity_level: Integer 0-2
-
-    Returns:
-        list: Action items for the user
-    """
-    actions = {
-        0: [
-            "Maintain your current healthy lifestyle",
-            "Schedule routine check-ups annually",
-            "Continue regular exercise (30+ minutes, 5 days/week)",
-            "Eat a heart-healthy diet rich in fruits and vegetables",
-            "Monitor your blood pressure at home monthly"
-        ],
-        1: [
-            "Schedule a consultation with your primary care doctor within 2-4 weeks",
-            "Discuss lifestyle modifications (diet, exercise, stress management)",
-            "Get a comprehensive metabolic panel and lipid profile blood test",
-            "Consider joining a cardiac rehabilitation or wellness program",
-            "Monitor symptoms (chest pain, shortness of breath) and track changes",
-            "Reduce sodium intake and maintain healthy weight"
-        ],
-        2: [
-            "Contact a cardiologist IMMEDIATELY for urgent consultation (within 24-48 hours)",
-            "Do not delay - severe risk factors detected",
-            "Avoid strenuous physical activity until medically evaluated",
-            "Keep a detailed symptom diary (chest pain, breathing difficulty, fatigue)",
-            "Have someone accompany you to medical appointments",
-            "Bring complete medical history, current medications, and this assessment",
-            "If experiencing acute symptoms (severe chest pain, shortness of breath), call 911"
-        ]
-    }
-    return actions.get(severity_level, actions[0])
-
-
-def get_confidence_description(confidence):
-    """
-    Convert confidence to user-friendly description.
-
-    Args:
-        confidence: Float 0-1
-
-    Returns:
-        dict: Confidence description with text and color
-    """
-    if confidence >= 0.9:
-        return {"text": "Very Confident", "color": "#4CAF50"}
-    elif confidence >= 0.75:
-        return {"text": "Confident", "color": "#8BC34A"}
-    elif confidence >= 0.60:
-        return {"text": "Moderately Confident", "color": "#FFC107"}
-    else:
-        return {"text": "Low Confidence", "color": "#FF6B35", "warning": True}
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check endpoint."""
+    return jsonify({
+        'status': 'healthy',
+        'model_loaded': model is not None,
+        'model_type': metadata['best_approach'] if metadata else None
+    })
 
 
 @app.route('/api/predict', methods=['POST'])
 def predict():
     """
-    Main prediction endpoint with UI-optimized response (3-class version).
-
-    Request Body:
-        JSON with patient data (13 clinical features)
-
-    Response:
-        Enhanced JSON with prediction and UI-ready formatting
+    Main prediction endpoint.
+    
+    Expected JSON input:
+    {
+        "age": 63,
+        "sex": "Male",
+        "cp": "typical angina",
+        "trestbps": 145.0,
+        "chol": 233.0,
+        "fbs": true,
+        "restecg": "lv hypertrophy",
+        "thalch": 150.0,
+        "exang": false,
+        "oldpeak": 2.3,
+        "slope": "downsloping",
+        "ca": 0.0,
+        "thal": "fixed defect"
+    }
     """
     try:
-        # Get patient data
-        patient_data = request.json
-
-        if not patient_data:
+        # Get JSON data
+        data = request.get_json()
+        
+        if not data:
             return jsonify({
-                "success": False,
-                "error": {
-                    "type": "validation_error",
-                    "message": "No data provided",
-                    "display": {
-                        "title": "Missing Data",
-                        "message": "Please provide patient data in the request body."
-                    }
-                }
+                'error': 'No input data provided',
+                'details': 'Request body must contain JSON data'
             }), 400
-
-        # Validate required fields
-        required_fields = ['age', 'sex', 'cp', 'fbs', 'exang']
-        missing_fields = [f for f in required_fields if f not in patient_data]
-
-        if missing_fields:
+        
+        # Validate input
+        is_valid, error_msg = validate_input(data)
+        if not is_valid:
             return jsonify({
-                "success": False,
-                "error": {
-                    "type": "validation_error",
-                    "message": "Missing required fields",
-                    "fields": missing_fields,
-                    "display": {
-                        "title": "Please Check Your Information",
-                        "message": f"The following required fields are missing: {', '.join(missing_fields)}"
-                    }
-                }
+                'error': 'Invalid input',
+                'details': error_msg
             }), 400
-
+        
         # Preprocess input
-        X_processed = preprocess_input(patient_data)
-
-        # Get prediction (0-2)
-        severity_level = int(model_3class.predict(X_processed)[0])
-        probabilities = model_3class.predict_proba(X_processed)[0]
-        confidence = float(probabilities[severity_level])
-
-        # Get configuration
-        config = get_severity_config_3class(severity_level)
-        actions = get_action_items_3class(severity_level)
-        confidence_desc = get_confidence_description(confidence)
-
-        # Severity labels (3 classes)
-        class_mapping = model_metadata['class_mapping']
-        severity_label = class_mapping[severity_level]
-
-        risk_categories = {
-            0: "Low Risk",
-            1: "Moderate Risk",
-            2: "High Risk"
-        }
-
-        # Chart colors for 3 classes
-        chart_colors = ["#4CAF50", "#FF9800", "#E91E63"]
-
-        # Build response
-        response = {
-            "success": True,
-            "data": {
-                "prediction": severity_level,
-                "confidence": confidence,
-                "probabilities": {
-                    str(i): float(probabilities[i]) for i in range(3)
-                },
-                "risk_category": severity_label,
-                "risk_color": chart_colors[severity_level],
-                "action_items": actions
-            }
-        }
-
-        return jsonify(response), 200
-
-    except Exception as e:
-        print(f"Error in prediction: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        processed_data = preprocess_input(data)
+        
+        # Make prediction
+        if hasattr(model, 'predict_proba'):
+            prediction_proba = model.predict_proba(processed_data)[0]
+            prediction = int(np.argmax(prediction_proba))
+            confidence = float(prediction_proba[prediction])
+        else:
+            # For hierarchical or ordinal models without predict_proba
+            prediction = int(model.predict(processed_data)[0])
+            confidence = 0.75  # Default confidence for models without probability estimates
+        
+        # Get prediction label
+        prediction_label = metadata['class_names'][prediction]
+        
+        # Generate recommendation
+        risk_level, recommendation = get_recommendation(prediction, confidence)
+        
+        # Return response
         return jsonify({
-            "success": False,
-            "error": {
-                "type": "server_error",
-                "message": "An unexpected error occurred",
-                "details": str(e),
-                "display": {
-                    "title": "Something Went Wrong",
-                    "message": "Please try again or contact support if the problem persists."
-                }
-            }
+            'prediction': prediction,
+            'prediction_label': prediction_label,
+            'confidence': round(confidence, 4),
+            'risk_level': risk_level,
+            'recommendation': recommendation
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'error': 'Prediction failed',
+            'details': str(e)
         }), 500
 
 
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """
-    Health check endpoint.
-
-    Returns:
-        JSON with API health status
-    """
-    return jsonify({
-        "status": "healthy",
-        "model_loaded": model_3class is not None,
-        "model_version": "3-class grouping",
-        "timestamp": datetime.utcnow().isoformat() + "Z"
-    }), 200
-
-
-@app.route('/api/info', methods=['GET'])
+@app.route('/api/model-info', methods=['GET'])
 def model_info():
-    """
-    Get model information (3-class version).
+    """Return information about the loaded model."""
+    if metadata is None:
+        return jsonify({
+            'error': 'Model not loaded'
+        }), 500
 
-    Returns:
-        JSON with model metadata
-    """
     return jsonify({
-        "model": model_metadata['model_name'],
-        "version": "1.0.0",
-        "num_classes": model_metadata['num_classes'],
-        "class_mapping": model_metadata['class_mapping'],
-        "performance": {
-            "test_f1": model_metadata['performance']['test_f1_weighted'],
-            "test_accuracy": model_metadata['performance']['test_accuracy'],
-            "f1_per_class": model_metadata['performance']['f1_per_class']
-        },
-        "features": len(preprocessing_artifacts['feature_names']),
-        "description": "3-class severity grouping (No Disease, Mild-Moderate, Severe-Critical) for improved accuracy"
-    }), 200
+        'approach': metadata['best_approach'],
+        'model_name': metadata['final_model_name'],
+        'f1_score': metadata['best_f1_score'],
+        'class_names': metadata['class_names'],
+        'severity_grouping': metadata.get('severity_grouping', 'Original 1-2 → 1, 3-4 → 2'),
+        'features_used': len(metadata['feature_names'])
+    })
 
 
-@app.route('/', methods=['GET'])
-def index():
-    """
-    API root endpoint with documentation.
-    """
+@app.errorhandler(404)
+def not_found(error):
+    """Handle 404 errors."""
     return jsonify({
-        "name": "Heart Disease Risk Assessment API - 3-Class Version",
-        "version": "1.0.0",
-        "model": "XGBoost 3-Class Severity",
-        "f1_score": model_metadata['performance']['test_f1_weighted'],
-        "endpoints": {
-            "POST /api/predict": "Get heart disease prediction (3 severity levels)",
-            "GET /api/health": "Health check",
-            "GET /api/info": "Model information"
-        },
-        "documentation": "See README.md for full API documentation"
-    }), 200
+        'error': 'Endpoint not found',
+        'details': 'The requested endpoint does not exist'
+    }), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle 500 errors."""
+    return jsonify({
+        'error': 'Internal server error',
+        'details': 'An unexpected error occurred'
+    }), 500
 
 
 if __name__ == '__main__':
-    print("\n" + "="*70)
-    print("Endpoints:")
-    print("  POST /api/predict - Get heart disease prediction (3 classes)")
-    print("  GET  /api/health  - Health check")
-    print("  GET  /api/info    - Model information")
-    print("  GET  /            - API documentation")
-    print("\n" + "="*70)
-    print("Starting server on http://0.0.0.0:8000")
-    print("="*70 + "\n")
-
-    app.run(host='0.0.0.0', port=8000, debug=False)
+    # Load models on startup
+    print("Loading models...")
+    if load_models():
+        print("Starting Flask server...")
+        print("API available at http://localhost:8000/api")
+        print("\nEndpoints:")
+        print("  - POST /api/predict     : Make predictions")
+        print("  - GET  /api/health      : Health check")
+        print("  - GET  /api/model-info  : Model information")
+        app.run(host='0.0.0.0', port=8000, debug=True)
+    else:
+        print("Failed to load models. Please ensure model files exist in ../../models/")
+        print("Run the training notebook (03_model_training.ipynb) first to generate models.")
