@@ -20,6 +20,7 @@ Predicts heart disease severity based on patient clinical data.
 
 #### Request Format
 
+**Complete Request (all fields):**
 ```json
 {
   "age": 63,
@@ -37,6 +38,18 @@ Predicts heart disease severity based on patient clinical data.
   "thal": "fixed defect"
 }
 ```
+
+**Minimal Request (only required fields):**
+```json
+{
+  "age": 45,
+  "sex": "Female",
+  "cp": "asymptomatic",
+  "exang": false
+}
+```
+
+**Note**: When optional fields are omitted, the API automatically applies sensible defaults. See [Optional Fields](#optional-fields-9-fields) for default values.
 
 #### Response Format
 
@@ -74,28 +87,47 @@ Predicts heart disease severity based on patient clinical data.
 
 ## Input Field Specifications
 
-### Numeric Fields
+### Required Fields (4 fields)
 
-| Field | Description | Type | Range | Unit |
-|-------|-------------|------|-------|------|
-| `age` | Patient age | Integer | 29-77 | years |
-| `trestbps` | Resting blood pressure | Float | 94-200 | mm Hg |
-| `chol` | Serum cholesterol | Float | 126-564 | mg/dl |
-| `thalch` | Maximum heart rate achieved | Float | 71-202 | bpm |
-| `oldpeak` | ST depression induced by exercise | Float | 0.0-6.2 | - |
-| `ca` | Number of major vessels colored by fluoroscopy | Float | 0.0-3.0 | count |
+These fields must always be provided:
 
-### Categorical Fields
+| Field | Description | Type | Valid Values |
+|-------|-------------|------|--------------|
+| `age` | Patient age | Integer | 18-120 years |
+| `sex` | Patient sex | String | `"Male"`, `"Female"` |
+| `cp` | Chest pain type | String | `"typical angina"`, `"atypical angina"`, `"non-anginal"`, `"asymptomatic"` |
+| `exang` | Exercise induced angina | Boolean | `true`, `false` |
 
-| Field | Description | Valid Values |
-|-------|-------------|--------------|
-| `sex` | Patient sex | `"Male"`, `"Female"` |
-| `cp` | Chest pain type | `"typical angina"`, `"atypical angina"`, `"non-anginal"`, `"asymptomatic"` |
-| `fbs` | Fasting blood sugar > 120 mg/dl | `true`, `false` |
-| `restecg` | Resting ECG results | `"normal"`, `"st-t abnormality"`, `"lv hypertrophy"` |
-| `exang` | Exercise induced angina | `true`, `false` |
-| `slope` | Slope of peak exercise ST segment | `"upsloping"`, `"flat"`, `"downsloping"` |
-| `thal` | Thalassemia | `"normal"`, `"fixed defect"`, `"reversable defect"` |
+### Optional Fields (9 fields)
+
+These fields can be omitted. If not provided, sensible defaults will be used:
+
+#### Numeric Optional Fields
+
+| Field | Description | Type | Range | Unit | Default if Missing |
+|-------|-------------|------|-------|------|--------------------|
+| `trestbps` | Resting blood pressure | Float | 70-250 | mm Hg | `130.0` (median BP) |
+| `chol` | Serum cholesterol | Float | 100-600 | mg/dl | `200.0` (median cholesterol) |
+| `thalch` | Maximum heart rate achieved | Float | 60-220 | bpm | `220 - age` (estimated) |
+| `oldpeak` | ST depression induced by exercise | Float | -3.0 to 10.0 | - | `0.0` (no test done) |
+| `ca` | Number of major vessels with blockage | Float | 0.0-4.0 | count | `0.0` (no test/no blockages) |
+
+#### Categorical Optional Fields
+
+| Field | Description | Valid Values | Default if Missing |
+|-------|-------------|--------------|-------------------|
+| `fbs` | Fasting blood sugar > 120 mg/dl | `true`, `false` | `false` (non-diabetic) |
+| `restecg` | Resting ECG results | `"normal"`, `"st-t abnormality"`, `"lv hypertrophy"` | `"normal"` |
+| `slope` | Slope of peak exercise ST segment | `"upsloping"`, `"flat"`, `"downsloping"` | `"upsloping"` |
+| `thal` | Thalassemia/nuclear stress test | `"normal"`, `"fixed defect"`, `"reversable defect"` | `"normal"` |
+
+### Default Values Rationale
+
+Default values are based on:
+- **Population medians**: For blood pressure (130) and cholesterol (200)
+- **Conservative assumptions**: Assuming no disease for untested parameters
+- **Medical formulas**: Max heart rate = 220 - age
+- **Common results**: Most ECGs and stress tests are normal in screening populations
 
 ## Output Field Specifications
 
@@ -423,6 +455,32 @@ curl -X POST http://localhost:8000/api/predict \
 
 ---
 
+### Test Case 6: Minimal Request - User Doesn't Know Medical Details (Expected: Class 0 or 1)
+
+```bash
+curl -X POST http://localhost:8000/api/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "age": 42,
+    "sex": "Female",
+    "cp": "non-anginal",
+    "exang": false
+  }'
+```
+
+**Patient Profile:** Middle-aged female who only knows basic symptoms. All optional fields will use defaults:
+- Blood pressure: 130 (default median)
+- Cholesterol: 200 (default median)
+- Fasting blood sugar: false (non-diabetic default)
+- ECG: normal (default)
+- Max heart rate: 178 (calculated as 220 - 42)
+- ST depression: 0.0 (no test default)
+- ST slope: upsloping (favorable default)
+- Major vessels: 0 (no test default)
+- Thalassemia: normal (no test default)
+
+---
+
 ### Expected Results Summary
 
 | Test Case | Age/Sex | Key Risk Factors | Expected Class | Expected Category |
@@ -432,6 +490,7 @@ curl -X POST http://localhost:8000/api/predict \
 | 3 | 70M | Multiple severe factors, multi-vessel disease | 2 | Severe-Critical |
 | 4 | 45F | Borderline factors, non-cardiac pain | 0-1 | No Disease or Mild |
 | 5 | 58M | Asymptomatic but abnormal stress test | 1-2 | Mild or Severe |
+| 6 | 42F | Minimal data, only symptoms (uses defaults) | 0-1 | No Disease or Mild |
 
 ## Model Information
 
@@ -492,10 +551,12 @@ The API returns a structured response with `success` field and nested `data` obj
 
 ### Form Validation
 
-- Implement client-side validation for all numeric ranges
+- Implement client-side validation for all numeric ranges (only if user provides values)
 - Use dropdown menus for categorical fields to ensure valid values
-- Mark all fields as required
+- Mark only 4 fields as required: age, sex, chest pain type, exercise-induced angina
+- Mark 9 fields as optional with "Skip if unknown" option
 - Provide helpful tooltips/descriptions for medical terms
+- Show default values that will be used if fields are left empty
 
 ### User Experience Recommendations
 

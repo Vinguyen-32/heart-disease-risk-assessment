@@ -149,43 +149,43 @@ def load_models():
 def validate_input(data: Dict[str, Any]) -> Tuple[bool, str]:
     """
     Validate input data format and ranges.
-    
+
     Args:
         data: Input dictionary containing patient data
-        
+
     Returns:
         Tuple of (is_valid, error_message)
     """
-    required_fields = [
-        'age', 'sex', 'cp', 'trestbps', 'chol', 'fbs',
-        'restecg', 'thalch', 'exang', 'oldpeak', 'slope', 'ca', 'thal'
-    ]
-    
+    # Only 4 fields are required - basic info that users always know
+    required_fields = ['age', 'sex', 'cp', 'exang']
+
     # Check required fields
     missing_fields = [field for field in required_fields if field not in data]
     if missing_fields:
         return False, f"Missing required fields: {', '.join(missing_fields)}"
     
-    # Validate numeric ranges
+    # Validate numeric ranges (only if field is provided - medically reasonable ranges)
     numeric_validations = {
-        'age': (29, 77, 'years'),
-        'trestbps': (94, 200, 'mm Hg'),
-        'chol': (126, 564, 'mg/dl'),
-        'thalch': (71, 202, 'bpm'),
-        'oldpeak': (0.0, 6.2, ''),
-        'ca': (0.0, 3.0, '')
+        'age': (18, 120, 'years'),
+        'trestbps': (70, 250, 'mm Hg'),
+        'chol': (100, 600, 'mg/dl'),
+        'thalch': (60, 220, 'bpm'),
+        'oldpeak': (-3.0, 10.0, ''),
+        'ca': (0.0, 4.0, '')
     }
-    
+
     for field, (min_val, max_val, unit) in numeric_validations.items():
-        try:
-            value = float(data[field])
-            if not (min_val <= value <= max_val):
-                unit_str = f" {unit}" if unit else ""
-                return False, f"Field '{field}' must be between {min_val} and {max_val}{unit_str}"
-        except (ValueError, TypeError):
-            return False, f"Field '{field}' must be a valid number"
+        # Only validate if field is present in the data
+        if field in data:
+            try:
+                value = float(data[field])
+                if not (min_val <= value <= max_val):
+                    unit_str = f" {unit}" if unit else ""
+                    return False, f"Field '{field}' must be between {min_val} and {max_val}{unit_str}"
+            except (ValueError, TypeError):
+                return False, f"Field '{field}' must be a valid number"
     
-    # Validate categorical fields
+    # Validate categorical fields (only if field is provided)
     categorical_validations = {
         'sex': ['Male', 'Female'],
         'cp': ['typical angina', 'atypical angina', 'non-anginal', 'asymptomatic'],
@@ -195,12 +195,52 @@ def validate_input(data: Dict[str, Any]) -> Tuple[bool, str]:
         'slope': ['upsloping', 'flat', 'downsloping'],
         'thal': ['normal', 'fixed defect', 'reversable defect']
     }
-    
+
     for field, valid_values in categorical_validations.items():
-        if data[field] not in valid_values:
+        # Only validate if field is present in the data
+        if field in data and data[field] not in valid_values:
             return False, f"Invalid value for '{field}'. Valid values: {', '.join(map(str, valid_values))}"
-    
+
     return True, ""
+
+
+def apply_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Apply default values for missing optional fields.
+
+    Args:
+        data: Input dictionary containing patient data
+
+    Returns:
+        Dictionary with defaults applied for missing optional fields
+    """
+    # Create a copy to avoid modifying the original
+    data_with_defaults = data.copy()
+
+    # Optional field defaults based on population medians and safe assumptions
+    optional_field_defaults = {
+        'trestbps': 130.0,      # Median resting blood pressure
+        'chol': 200.0,          # Median cholesterol (borderline-high, conservative)
+        'fbs': False,           # Most people don't have elevated blood sugar
+        'restecg': 'normal',    # Most common ECG result
+        'thalch': None,         # Will calculate as 220 - age
+        'oldpeak': 0.0,         # No stress test done / normal result
+        'slope': 'upsloping',   # Most favorable/common slope
+        'ca': 0.0,              # No angiogram done / no blockages
+        'thal': 'normal'        # No nuclear test done / normal result
+    }
+
+    # Apply defaults for missing fields
+    for field, default_value in optional_field_defaults.items():
+        if field not in data_with_defaults:
+            if field == 'thalch':
+                # Calculate estimated max heart rate: 220 - age
+                age = data_with_defaults.get('age', 50)  # Default age if somehow missing
+                data_with_defaults['thalch'] = float(220 - age)
+            else:
+                data_with_defaults[field] = default_value
+
+    return data_with_defaults
 
 
 def preprocess_input(data: Dict[str, Any]) -> pd.DataFrame:
@@ -398,16 +438,19 @@ def predict():
                 'error': 'No input data provided'
             }), 400
         
-        # Validate input
+        # Validate input (only required fields)
         is_valid, error_msg = validate_input(data)
         if not is_valid:
             return jsonify({
                 'success': False,
                 'error': error_msg
             }), 400
-        
+
+        # Apply defaults for missing optional fields
+        data_with_defaults = apply_defaults(data)
+
         # Preprocess input
-        processed_data = preprocess_input(data)
+        processed_data = preprocess_input(data_with_defaults)
         
         # Make prediction and get probabilities
         if hasattr(model, 'predict_proba'):

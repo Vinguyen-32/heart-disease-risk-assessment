@@ -12,7 +12,7 @@ This guide helps translate clinical features into user-friendly questions for th
 #### Age
 **Question**: "What is your age?"
 **Input Type**: Number input (years)
-**Range**: 1-120
+**Range**: 18-120
 **Help Text**: "Please enter your current age in years"
 **Required**: Yes
 **Example**: 45
@@ -64,9 +64,10 @@ This guide helps translate clinical features into user-friendly questions for th
 #### Resting Blood Pressure (trestbps)
 **Question**: "What is your resting blood pressure? (Systolic/Top Number)"
 **Input Type**: Number input (mm Hg)
-**Range**: 80-250
-**Help Text**: "The top/first number from your blood pressure reading (e.g., if your BP is 120/80, enter 120). If you don't know, leave blank."
-**Required**: No (can handle missing)
+**Range**: 70-250
+**Help Text**: "The top/first number from your blood pressure reading (e.g., if your BP is 120/80, enter 120). If you don't know, we'll use a median value of 130."
+**Required**: No
+**Default Value**: 130.0 (median blood pressure)
 **Example**: 120
 **Visual Aid**: Blood pressure gauge showing categories:
 - < 120: Normal (green)
@@ -80,8 +81,9 @@ This guide helps translate clinical features into user-friendly questions for th
 **Question**: "What is your total cholesterol level?"
 **Input Type**: Number input (mg/dL)
 **Range**: 100-600
-**Help Text**: "Your total cholesterol from a recent blood test in mg/dL. If you don't know, leave blank."
+**Help Text**: "Your total cholesterol from a recent blood test in mg/dL. If you don't know, we'll use a median value of 200."
 **Required**: No
+**Default Value**: 200.0 (median cholesterol)
 **Example**: 200
 **Visual Aid**: Cholesterol level chart:
 - < 200: Desirable (green)
@@ -99,9 +101,9 @@ This guide helps translate clinical features into user-friendly questions for th
 - Yes (TRUE)
 - No (FALSE)
 - I don't know
-**Help Text**: "Fasting blood sugar from a blood test after not eating for 8+ hours. Normal is below 100 mg/dL. If you have diabetes or prediabetes, select 'Yes'."
-**Required**: Yes
-**Default**: FALSE
+**Help Text**: "Fasting blood sugar from a blood test after not eating for 8+ hours. Normal is below 100 mg/dL. If you have diabetes or prediabetes, select 'Yes'. If you don't know, we'll assume normal (No)."
+**Required**: No
+**Default Value**: No (FALSE) - assumes non-diabetic
 
 ---
 
@@ -122,8 +124,9 @@ This guide helps translate clinical features into user-friendly questions for th
    - *Description*: "Thickening of the heart's main pumping chamber"
    - *User-friendly*: "Heart muscle thickening detected"
 
-**Help Text**: "If you've had an ECG/EKG (heart rhythm test), select your most recent result. If you haven't had one, select 'Normal' or 'I don't know'."
-**Required**: Yes (default to Normal if unknown)
+**Help Text**: "If you've had an ECG/EKG (heart rhythm test), select your most recent result. If you haven't had one or don't know, we'll assume 'Normal'."
+**Required**: No
+**Default Value**: Normal
 **Info Icon**: "What's an ECG?" tooltip
 
 ---
@@ -132,10 +135,11 @@ This guide helps translate clinical features into user-friendly questions for th
 **Question**: "What was your maximum heart rate during exercise or a stress test?"
 **Input Type**: Number input (beats per minute)
 **Range**: 60-220
-**Help Text**: "From a stress test or exercise test. If you don't know, leave blank. For reference, estimated max heart rate is about 220 minus your age."
+**Help Text**: "From a stress test or exercise test. If you don't know, we'll estimate it as 220 minus your age."
 **Required**: No
+**Default Value**: 220 - age (estimated using age-based formula)
 **Example**: 150
-**Auto-calculate option**: "Calculate estimated max (220 - age)"
+**Auto-calculate option**: "Use estimated value (220 - age)"
 
 ---
 
@@ -147,7 +151,6 @@ This guide helps translate clinical features into user-friendly questions for th
 - No (FALSE)
 **Help Text**: "Does physical activity or exercise trigger chest pain or discomfort?"
 **Required**: Yes
-**Default**: FALSE
 
 ---
 
@@ -155,12 +158,13 @@ This guide helps translate clinical features into user-friendly questions for th
 
 #### ST Depression (oldpeak)
 **Question**: "ST depression value from exercise test"
-**Input Type**: Number input (decimal)
-**Range**: 0.0-6.0
-**Help Text**: "This value comes from an exercise stress test and measures changes in your heart's electrical activity. If you haven't had a stress test, enter 0 or leave blank."
+**Input Type**: Number input (decimal, can be negative)
+**Range**: -3.0 to 10.0
+**Help Text**: "This value comes from an exercise stress test and measures changes in your heart's electrical activity. Negative values indicate ST elevation. If you haven't had a stress test or don't know, we'll use 0."
 **Required**: No
+**Default Value**: 0.0 (no stress test done / normal result)
 **Example**: 1.0
-**Note for UI**: Consider "I haven't had this test" checkbox that auto-fills with 0
+**Note**: Negative values are valid and clinically significant (ST elevation)
 
 ---
 
@@ -171,10 +175,11 @@ This guide helps translate clinical features into user-friendly questions for th
 1. **"Upsloping"** - Generally favorable
 2. **"Flat"** - Possibly concerning
 3. **"Downsloping"** - More concerning
-4. **"I haven't had this test"** - Will use default
+4. **"I haven't had this test"** - Use default
 
-**Help Text**: "From an exercise stress test. If you haven't had this test, select 'I haven't had this test'."
+**Help Text**: "From an exercise stress test. If you haven't had this test or don't know, we'll assume 'Upsloping' (most favorable)."
 **Required**: No
+**Default Value**: Upsloping (most favorable/common result)
 **Note**: This is a technical feature - consider simplifying to "Have you had a stress test? Yes/No"
 
 ---
@@ -187,13 +192,14 @@ This guide helps translate clinical features into user-friendly questions for th
 **Options**:
 - 0 - No blockages
 - 1 - One vessel
-- 2 - Two vessels  
+- 2 - Two vessels
 - 3 - Three vessels
 - 4 - Four vessels
 - I haven't had this test
 
-**Help Text**: "From a cardiac catheterization or angiogram. This test uses dye to visualize blood vessels. If you haven't had this test, select 'I haven't had this test'."
+**Help Text**: "From a cardiac catheterization or angiogram. This test uses dye to visualize blood vessels. If you haven't had this test or don't know, we'll assume no blockages (0)."
 **Required**: No
+**Default Value**: 0 (no test done / no blockages)
 **Note**: Very technical - many users won't have this
 
 ---
@@ -205,11 +211,12 @@ This guide helps translate clinical features into user-friendly questions for th
 1. **"Normal"** - Normal blood flow
 2. **"Fixed defect"** - Permanent blood flow problem
 3. **"Reversible defect"** - Temporary blood flow problem
-4. **"I haven't had this test"**
+4. **"I haven't had this test"** - Use default
 
-**Help Text**: "From a nuclear stress test or similar imaging. If you haven't had this test, select 'I haven't had this test'."
+**Help Text**: "From a nuclear stress test or similar imaging. If you haven't had this test or don't know, we'll assume 'Normal'."
 **Required**: No
-**Note**: Consider simplifying or making optional
+**Default Value**: Normal (no test done / normal result)
+**Note**: Very technical - many users won't have this
 
 ---
 
@@ -218,24 +225,29 @@ This guide helps translate clinical features into user-friendly questions for th
 ### Progressive Disclosure
 Organize into sections that users complete step-by-step:
 
-**Section 1: About You** (always show)
+**Section 1: About You** (required)
 - Age, Sex
 
-**Section 2: Symptoms** (always show)
+**Section 2: Symptoms** (required)
 - Chest pain type
 - Exercise-induced chest pain
 
-**Section 3: Basic Health Metrics** (always show)
-- Blood pressure
-- Cholesterol
-- Blood sugar
+**Section 3: Basic Health Metrics** (optional - can skip if unknown)
+- Blood pressure (default: 130)
+- Cholesterol (default: 200)
+- Blood sugar (default: No/FALSE)
 
-**Section 4: Test Results** (collapsible/optional)
-- Heart rate, ECG results, exercise test results
+**Section 4: Test Results** (optional - can skip if not tested)
+- Heart rate (default: 220 - age)
+- ECG results (default: normal)
+- Exercise test results (default: 0.0 oldpeak)
 
-**Section 5: Advanced Tests** (collapsible/optional)
-- ST slope, major vessels, thalassemia
-- Include "I haven't had these tests" option that auto-fills defaults
+**Section 5: Advanced Tests** (optional - most users can skip)
+- ST slope (default: upsloping)
+- Major vessels (default: 0)
+- Thalassemia (default: normal)
+
+**Note**: Only Sections 1 and 2 are required. Sections 3-5 can be skipped entirely if the user doesn't have medical test results.
 
 ### Visual Design
 - **Color coding**: Use green/yellow/orange/red for risk levels
@@ -246,10 +258,12 @@ Organize into sections that users complete step-by-step:
 
 ### User Experience
 - **Auto-save**: Save progress as user fills out form
-- **Skip options**: "I don't know" or "Not tested" for optional fields
-- **Validation**: Real-time feedback on valid ranges
+- **Skip options**: Prominent "I don't know" or "Skip" buttons for optional fields
+- **Default indicators**: Show what default value will be used if field is skipped
+- **Validation**: Real-time feedback on valid ranges (only for provided values)
 - **Mobile-friendly**: Large tap targets, single-column layout
 - **Accessibility**: Screen reader compatible, keyboard navigation
+- **Quick assessment**: Allow users to complete assessment with just 4 required fields
 
 ### Sample UI Flow
 ```
@@ -279,25 +293,6 @@ Organize into sections that users complete step-by-step:
   
        [← Back]  [Continue →]
 ```
-
----
-
-## Default Values for Missing Data
-
-When users select "I don't know" or skip optional fields:
-
-| Feature | Default Value | Rationale |
-|---------|--------------|-----------|
-| trestbps | 130 | Median blood pressure |
-| chol | 240 | Median cholesterol |
-| fbs | FALSE | Most people don't have elevated blood sugar |
-| restecg | normal | Most common result |
-| thalch | 220 - age | Estimated max heart rate formula |
-| exang | FALSE | Most people don't have exercise angina |
-| oldpeak | 0.0 | Indicates no stress test |
-| slope | upsloping | Most favorable/common |
-| ca | 0 | No angiogram done / no blockages |
-| thal | normal | No nuclear test done / normal result |
 
 ---
 
