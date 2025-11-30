@@ -12,26 +12,22 @@ import axios from 'axios';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 interface FormData {
-  // Demographics
+  // Required fields
   age: number;
   sex: string;
-
-  // Symptoms
   cp: string;
   exang: string;
 
-  // Vitals
-  trestbps: number;
-  chol: number;
-  fbs: string;
-  thalch: number;
-
-  // Diagnostic
-  restecg: string;
-  oldpeak: number;
-  slope: string;
-  ca: string;
-  thal: string;
+  // Optional fields
+  trestbps?: number;
+  chol?: number;
+  fbs?: string;
+  thalch?: number;
+  restecg?: string;
+  oldpeak?: number;
+  slope?: string;
+  ca?: string;
+  thal?: string;
 }
 
 interface PredictionResponse {
@@ -55,7 +51,9 @@ export default function SimpleAssessment() {
   const [loading, setLoading] = useState(false);
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>();
+  const { register, handleSubmit, watch, formState: { errors } } = useForm<FormData>();
+
+  const age = watch('age', 50);
 
   const onSubmit = async (data: FormData) => {
     setLoading(true);
@@ -63,21 +61,24 @@ export default function SimpleAssessment() {
 
     try {
       // Transform form data to match backend API expectations
-      const payload = {
+      // Only include fields that have values (non-empty)
+      const payload: any = {
         age: Number(data.age),
         sex: data.sex,
         cp: data.cp,
-        trestbps: Number(data.trestbps),
-        chol: Number(data.chol),
-        fbs: data.fbs === 'true',
-        restecg: data.restecg,
-        thalch: Number(data.thalch),
         exang: data.exang === 'true',
-        oldpeak: Number(data.oldpeak),
-        slope: data.slope,
-        ca: data.ca,
-        thal: data.thal,
       };
+
+      // Add optional fields only if provided
+      if (data.trestbps) payload.trestbps = Number(data.trestbps);
+      if (data.chol) payload.chol = Number(data.chol);
+      if (data.fbs !== undefined && data.fbs !== '') payload.fbs = data.fbs === 'true';
+      if (data.thalch) payload.thalch = Number(data.thalch);
+      if (data.restecg) payload.restecg = data.restecg;
+      if (data.oldpeak !== undefined && data.oldpeak !== null) payload.oldpeak = Number(data.oldpeak);
+      if (data.slope) payload.slope = data.slope;
+      if (data.ca !== undefined && data.ca !== '') payload.ca = Number(data.ca);
+      if (data.thal) payload.thal = data.thal;
 
       const response = await axios.post<PredictionResponse>(
         `${API_BASE_URL}/api/predict`,
@@ -88,13 +89,13 @@ export default function SimpleAssessment() {
 
       // Scroll to results
       setTimeout(() => {
-        document.getElementById('results')?.scrollIntoView({ behavior: 'smooth' });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       }, 100);
 
     } catch (err: any) {
       console.error('Prediction error:', err);
       setError(
-        err.response?.data?.error?.message ||
+        err.response?.data?.error ||
         'Failed to get prediction. Please check your inputs and try again.'
       );
     } finally {
@@ -117,233 +118,282 @@ export default function SimpleAssessment() {
 
           <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
             <p className="text-sm text-blue-800">
-              <strong>Note:</strong> This is a screening tool only and not a medical diagnosis.
-              Always consult with qualified healthcare professionals for medical advice.
+              <strong>Note:</strong> Only 4 fields are required. Optional fields can be skipped - defaults will be used.
+              This is a screening tool only and not a medical diagnosis. Always consult with qualified healthcare professionals.
             </p>
           </div>
         </div>
 
         {/* Assessment Form */}
+        {!prediction && (
         <form onSubmit={handleSubmit(onSubmit)} className="bg-white rounded-xl shadow-md p-8 mb-6">
-          {/* Demographics Section */}
+          {/* Demographics Section - REQUIRED */}
           <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+            <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
               <span className="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm">1</span>
-              Personal Information
+              About You
             </h2>
+            <p className="text-gray-600 text-sm mb-4">Basic information (all fields required)</p>
 
             <div className="grid md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Age * <span className="text-gray-500 text-xs">(1-120 years)</span>
+                  What is your age? * <span className="text-gray-500 text-xs">(18-120 years)</span>
                 </label>
                 <input
                   type="number"
-                  {...register('age', { required: true, min: 1, max: 120 })}
+                  {...register('age', { required: true, min: 18, max: 120 })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., 55"
+                  placeholder="e.g. 30"
                 />
-                {errors.age && <p className="text-red-500 text-sm mt-1">Age is required (1-120)</p>}
+                <p className="text-xs text-gray-500 mt-1">Please enter your current age in years</p>
+                {errors.age && <p className="text-red-500 text-sm mt-1">Age is required (18-120 years)</p>}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Sex *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  What is your biological sex? *
+                </label>
                 <select
                   {...register('sex', { required: true })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select...</option>
-                  <option value="male">Male</option>
                   <option value="female">Female</option>
+                  <option value="male">Male</option>
                 </select>
+                <p className="text-xs text-gray-500 mt-1">Select your biological sex as recorded in medical records</p>
                 {errors.sex && <p className="text-red-500 text-sm mt-1">Sex is required</p>}
               </div>
             </div>
           </div>
 
-          {/* Symptoms Section */}
+          {/* Symptoms Section - REQUIRED */}
           <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+            <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
               <span className="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm">2</span>
               Symptoms
             </h2>
+            <p className="text-gray-600 text-sm mb-4">Information about any chest pain or discomfort (all fields required)</p>
 
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Chest Pain Type *</label>
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  What type of chest discomfort do you experience, if any? *
+                </label>
                 <select
                   {...register('cp', { required: true })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select...</option>
-                  <option value="typical angina">Typical Angina (chest pressure with exertion)</option>
-                  <option value="atypical angina">Atypical Angina (similar but irregular pattern)</option>
-                  <option value="non-anginal">Non-Anginal Pain (not heart-related)</option>
-                  <option value="asymptomatic">Asymptomatic (no chest pain)</option>
+                  <option value="typical angina">Typical angina - Pressure/squeezing during activity, relieved by rest</option>
+                  <option value="atypical angina">Atypical angina - Chest discomfort that doesn't follow a clear pattern</option>
+                  <option value="non-anginal">Non-anginal pain - Sharp or stabbing, not related to exertion</option>
+                  <option value="asymptomatic">Asymptomatic - No chest pain or discomfort</option>
                 </select>
-                {errors.cp && <p className="text-red-500 text-sm mt-1">Chest pain type is required</p>}
+                <p className="text-xs text-gray-500 mt-1">Describe any chest discomfort you've experienced</p>
+                {errors.cp && <p className="text-red-500 text-sm mt-1">Please select a chest pain type</p>}
               </div>
 
-              <div className="md:col-span-2">
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Exercise Induced Angina *
+                  Do you experience chest pain during exercise or physical activity? *
                 </label>
                 <select
                   {...register('exang', { required: true })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select...</option>
-                  <option value="false">No (no chest pain during exercise)</option>
-                  <option value="true">Yes (chest pain during exercise)</option>
+                  <option value="false">No</option>
+                  <option value="true">Yes</option>
                 </select>
+                <p className="text-xs text-gray-500 mt-1">Does physical activity or exercise trigger chest pain or discomfort?</p>
                 {errors.exang && <p className="text-red-500 text-sm mt-1">This field is required</p>}
               </div>
             </div>
           </div>
 
-          {/* Vitals Section */}
+          {/* Vitals Section - OPTIONAL */}
           <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-              <span className="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm">3</span>
-              Vital Signs
+            <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
+              <span className="bg-gray-400 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm">3</span>
+              Basic Health Metrics
             </h2>
+            <p className="text-gray-600 text-sm mb-4">Optional - Skip if you don't know these values. Defaults will be used.</p>
 
             <div className="grid md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Resting Blood Pressure * <span className="text-gray-500 text-xs">(mm Hg)</span>
+                  What is your resting blood pressure? <span className="text-gray-500 text-xs">(Systolic/Top Number, mm Hg)</span>
                 </label>
                 <input
                   type="number"
-                  {...register('trestbps', { required: true, min: 50, max: 250 })}
+                  {...register('trestbps', { min: 70, max: 250 })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., 120"
+                  placeholder="e.g. 130"
                 />
-                {errors.trestbps && <p className="text-red-500 text-sm mt-1">BP required (50-250)</p>}
+                <p className="text-xs text-gray-500 mt-1">
+                  The top/first number from your blood pressure reading (e.g., if your BP is 120/80, enter 120).
+                  If you don't know, we'll use a median value of 130.
+                </p>
+                {errors.trestbps && <p className="text-red-500 text-sm mt-1">Must be between 70-250 mm Hg</p>}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Cholesterol * <span className="text-gray-500 text-xs">(mg/dl)</span>
+                  What is your total cholesterol level? <span className="text-gray-500 text-xs">(mg/dL)</span>
                 </label>
                 <input
                   type="number"
-                  {...register('chol', { required: true, min: 50, max: 600 })}
+                  {...register('chol', { min: 100, max: 600 })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., 200"
+                  placeholder="e.g. 200"
                 />
-                {errors.chol && <p className="text-red-500 text-sm mt-1">Cholesterol required (50-600)</p>}
+                <p className="text-xs text-gray-500 mt-1">
+                  Your total cholesterol from a recent blood test in mg/dL. If you don't know, we'll use a median value of 200.
+                </p>
+                {errors.chol && <p className="text-red-500 text-sm mt-1">Must be between 100-600 mg/dL</p>}
               </div>
 
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Fasting Blood Sugar &gt; 120 mg/dl? *
+                  Is your fasting blood sugar greater than 120 mg/dL?
                 </label>
                 <select
-                  {...register('fbs', { required: true })}
+                  {...register('fbs')}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">Select...</option>
-                  <option value="false">No (≤ 120 mg/dl)</option>
-                  <option value="true">Yes (&gt; 120 mg/dl)</option>
+                  <option value="">I don't know (will assume No)</option>
+                  <option value="false">No</option>
+                  <option value="true">Yes (or I have diabetes)</option>
                 </select>
-                {errors.fbs && <p className="text-red-500 text-sm mt-1">This field is required</p>}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Maximum Heart Rate * <span className="text-gray-500 text-xs">(bpm)</span>
-                </label>
-                <input
-                  type="number"
-                  {...register('thalch', { required: true, min: 60, max: 220 })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., 150"
-                />
-                {errors.thalch && <p className="text-red-500 text-sm mt-1">Heart rate required (60-220)</p>}
+                <p className="text-xs text-gray-500 mt-1">
+                  Fasting blood sugar from a blood test after not eating for 8+ hours. Normal is below 100 mg/dL.
+                  If you have diabetes or prediabetes, select 'Yes'. If you don't know, we'll assume normal (No).
+                </p>
               </div>
             </div>
           </div>
 
-          {/* Diagnostic Tests Section */}
+          {/* Heart Tests Section - OPTIONAL */}
           <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-              <span className="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm">4</span>
-              Diagnostic Test Results
+            <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
+              <span className="bg-gray-400 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm">4</span>
+              Heart Tests
             </h2>
+            <p className="text-gray-600 text-sm mb-4">Optional - Skip if you haven't had these tests. Defaults will be used.</p>
 
             <div className="grid md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Resting ECG *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Maximum heart rate during exercise or stress test <span className="text-gray-500 text-xs">(bpm)</span>
+                </label>
+                <input
+                  type="number"
+                  {...register('thalch', { min: 60, max: 220 })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder={`e.g. ${220 - (age || 50)}`}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  From a stress test or exercise test. If you don't know, we'll estimate it as 220 minus your age (≈{220 - (age || 50)} for you).
+                </p>
+                {errors.thalch && <p className="text-red-500 text-sm mt-1">Must be between 60-220 bpm</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Resting ECG/EKG results</label>
                 <select
-                  {...register('restecg', { required: true })}
+                  {...register('restecg')}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">Select...</option>
+                  <option value="">I haven't had one (will assume Normal)</option>
                   <option value="normal">Normal</option>
-                  <option value="st-t abnormality">ST-T Wave Abnormality</option>
-                  <option value="lv hypertrophy">Left Ventricular Hypertrophy</option>
+                  <option value="st-t abnormality">ST-T wave abnormality (minor irregularities)</option>
+                  <option value="lv hypertrophy">Left ventricular hypertrophy (heart muscle thickening)</option>
                 </select>
-                {errors.restecg && <p className="text-red-500 text-sm mt-1">ECG result required</p>}
+                <p className="text-xs text-gray-500 mt-1">
+                  If you've had an ECG/EKG (heart rhythm test), select your most recent result.
+                </p>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  ST Depression (Oldpeak) * <span className="text-gray-500 text-xs">(0-10)</span>
+                  ST depression value from exercise test
                 </label>
                 <input
                   type="number"
                   step="0.1"
-                  {...register('oldpeak', { required: true, min: 0, max: 10 })}
+                  {...register('oldpeak', { min: -3.0, max: 10.0 })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., 1.5"
+                  placeholder="e.g. 0.0"
                 />
-                {errors.oldpeak && <p className="text-red-500 text-sm mt-1">Oldpeak required (0-10)</p>}
+                <p className="text-xs text-gray-500 mt-1">
+                  From an exercise stress test. Negative values indicate ST elevation. If you haven't had a stress test, leave blank.
+                </p>
+                {errors.oldpeak && <p className="text-red-500 text-sm mt-1">Must be between -3.0 and 10.0</p>}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">ST Slope *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">ST Slope (from stress test)</label>
                 <select
-                  {...register('slope', { required: true })}
+                  {...register('slope')}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">Select...</option>
-                  <option value="upsloping">Upsloping</option>
-                  <option value="flat">Flat</option>
-                  <option value="downsloping">Downsloping</option>
+                  <option value="">I haven't had this test (will assume Upsloping)</option>
+                  <option value="upsloping">Upsloping (generally favorable)</option>
+                  <option value="flat">Flat (possibly concerning)</option>
+                  <option value="downsloping">Downsloping (more concerning)</option>
                 </select>
-                {errors.slope && <p className="text-red-500 text-sm mt-1">ST Slope required</p>}
+                <p className="text-xs text-gray-500 mt-1">From an exercise stress test.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Advanced Tests Section - OPTIONAL */}
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
+              <span className="bg-gray-400 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm">5</span>
+              Advanced Tests
+            </h2>
+            <p className="text-gray-600 text-sm mb-4">Optional - Most users can skip this section. Only complete if you've had these specialized tests.</p>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Number of major heart vessels with blockage (from angiography)
+                </label>
+                <select
+                  {...register('ca')}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">I haven't had this test (will assume 0)</option>
+                  <option value="0">0 - No blockages</option>
+                  <option value="1">1 vessel</option>
+                  <option value="2">2 vessels</option>
+                  <option value="3">3 vessels</option>
+                  <option value="4">4 vessels</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  From a cardiac catheterization or angiogram. This test uses dye to visualize blood vessels.
+                </p>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Number of Major Vessels * <span className="text-gray-500 text-xs">(colored by fluoroscopy)</span>
+                  Thalassemia or blood flow test result
                 </label>
                 <select
-                  {...register('ca', { required: true })}
+                  {...register('thal')}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">Select...</option>
-                  <option value="0.0">0 vessels</option>
-                  <option value="1.0">1 vessel</option>
-                  <option value="2.0">2 vessels</option>
-                  <option value="3.0">3 vessels</option>
+                  <option value="">I haven't had this test (will assume Normal)</option>
+                  <option value="normal">Normal - Normal blood flow</option>
+                  <option value="fixed defect">Fixed defect - Permanent blood flow problem</option>
+                  <option value="reversable defect">Reversible defect - Temporary blood flow problem</option>
                 </select>
-                {errors.ca && <p className="text-red-500 text-sm mt-1">Number of vessels required</p>}
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Thalassemia *</label>
-                <select
-                  {...register('thal', { required: true })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select...</option>
-                  <option value="normal">Normal</option>
-                  <option value="fixed defect">Fixed Defect</option>
-                  <option value="reversable defect">Reversible Defect</option>
-                </select>
-                {errors.thal && <p className="text-red-500 text-sm mt-1">Thalassemia result required</p>}
+                <p className="text-xs text-gray-500 mt-1">
+                  From a nuclear stress test or similar imaging.
+                </p>
               </div>
             </div>
           </div>
@@ -382,6 +432,7 @@ export default function SimpleAssessment() {
             </button>
           </div>
         </form>
+        )}
 
         {/* Results Section */}
         {prediction && (

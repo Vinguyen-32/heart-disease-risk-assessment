@@ -78,10 +78,10 @@ export default function Results() {
   const chartData = Object.entries(prediction.probabilities).map(([classNum, prob]) => ({
     name: `Class ${classNum}`,
     value: prob * 100,
-    label: ['No Disease', 'Mild', 'Moderate', 'Severe', 'Critical'][parseInt(classNum)],
+    label: ['No Disease', 'Mild-Moderate', 'Severe-Critical'][parseInt(classNum)],
   }));
 
-  const COLORS = ['#10b981', '#fbbf24', '#f97316', '#ef4444', '#991b1b'];
+  const COLORS = ['#10b981', '#f97316', '#ef4444'];
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">

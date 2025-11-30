@@ -113,11 +113,9 @@ frontend/
 ### 3. Results Display (`ResultsDisplay.tsx`)
 
 - **Color-coded severity levels**:
-  - Class 0 (None): Green
-  - Class 1 (Mild): Yellow
-  - Class 2 (Moderate): Orange
-  - Class 3 (Severe): Red
-  - Class 4 (Very Severe): Purple
+  - Class 0 (No Disease): Green
+  - Class 1 (Mild-Moderate): Orange
+  - Class 2 (Severe-Critical): Red
 
 - **Probability chart** using Recharts (bar chart)
 - **Confidence score** with percentage
@@ -184,17 +182,15 @@ interface AssessmentFormData {
 interface PredictionResponse {
   success: boolean;
   data: {
-    prediction: number;              // 0-4
+    prediction: number;              // 0-2 (3 classes)
     confidence: number;               // 0.0-1.0
     probabilities: {
       '0': number;
       '1': number;
       '2': number;
-      '3': number;
-      '4': number;
     };
-    risk_category: string;            // "None", "Mild", "Moderate", "Severe", "Very Severe"
-    risk_color: string;               // "green", "yellow", "orange", "red", "purple"
+    risk_category: string;            // "No Disease", "Mild-Moderate", "Severe-Critical"
+    risk_color: string;               // hex color code
     action_items: string[];
   };
 }
